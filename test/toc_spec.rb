@@ -13,10 +13,17 @@ describe "Toc" do
 				} else {
 					sys.print("success\n");
 					sys.print(toc.groupCount, " groups\n");
-					var groupName, group;
+					var groupName, group, timeEntryName, timeEntry;
 					for (groupName in toc.groups) {
 						group = toc.groups[groupName];
-						sys.print("Group ", groupName, ": ", group.timeEntryCount, " time entries\n");
+						sys.print("Group ", groupName, ": ",
+							group.timeEntryCount, " time entries\n");
+						for (timeEntryName in group.timeEntries) {
+							timeEntry = group.timeEntries[timeEntryName];
+							sys.print("Time entry ", groupName, "/",
+								timeEntryName, ": size=",
+								timeEntry.dataFileSize, "\n");
+						}
 					}
 				}
 			});
@@ -38,13 +45,15 @@ describe "Toc" do
 		File.open(@dbpath + "/bar/3/data", "w") do |f|
 			f.write("abc")
 		end
-		system("find #{@dbpath}")
-		puts "--------"
 		output, error = eval_js!(@code)
-		puts output
 		output.should include("2 groups")
 		output.should include("Group foo: 2 time entries")
-		output.should include("Group bar: 2 time entries")
+		output.should include("Time entry foo/1: size=0")
+		output.should include("Time entry foo/2: size=0")
+		output.should include("Group bar: 3 time entries")
+		output.should include("Time entry bar/1: size=0")
+		output.should include("Time entry bar/3: size=3")
+		output.should include("Time entry bar/4: size=0")
 	end
 	
 	it "generates an error if the database directory does not exist" do
