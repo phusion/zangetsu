@@ -5,7 +5,7 @@ describe "Toc" do
 		@dbpath = 'tmp/db'
 		@code = %q{
 			var sys = require('sys');
-			var Toc = require('mosadb/toc').Toc;
+			var Toc = require('optapdb/toc').Toc;
 			var toc = new Toc("tmp/db");
 			toc.reload(function(err) {
 				if (err) {
