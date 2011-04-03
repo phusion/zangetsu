@@ -1,3 +1,4 @@
+# encoding: binary
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "Database" do
@@ -112,6 +113,12 @@ describe "Database" do
 			output, error = eval_js!(@code)
 			output.should include("Cannot stat data file #{@dbpath}/foo/123/data")
 			output.should include("EACCES")
+		end
+		
+		it "creates empty data files in empty time entry directories" do
+			FileUtils.mkdir_p(@dbpath + "/foo/123")
+			eval_js!(@code)
+			File.exist?(@dbpath + "/foo/123/data").should be_true
 		end
 		
 		it "throws an error if a group is being created while reloading" do
@@ -232,6 +239,77 @@ describe "Database" do
 			})
 			File.directory?(@dbpath + "/foo").should be_true
 			count_line(output, "Created").should == 3
+		end
+	end
+	
+	describe ".findOrCreateTimeEntry" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath)
+			@code = %q{
+				var sys = require('sys');
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.reload(function(err) {
+					if (err) {
+						sys.print("ERROR: ", err, "\n");
+						process.exit(1);
+					}
+					
+					database.findOrCreateTimeEntry('foo', 123, function(err) {
+						if (err) {
+							sys.print("ERROR: ", err, "\n");
+							process.exit(1);
+						}
+						sys.print("Created\n");
+					});
+				});
+			}
+		end
+		
+		it "creates the given time entry and associated data file if it doesn't exist" do
+			output, error = eval_js!(@code)
+			File.directory?(@dbpath + "/foo/123").should be_true
+			File.file?(@dbpath + "/foo/123/data").should be_true
+		end
+		
+		it "returns the given time entry if it does exist" do
+			FileUtils.mkdir_p(@dbpath + "/foo/123")
+			File.open(@dbpath + "/foo/123/data", "w").close
+			output, error = eval_js!(@code)
+			File.directory?(@dbpath + "/foo/123").should be_true
+			output.should include("Created")
+		end
+	end
+	
+	describe ".add" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath + "/foo/123")
+		end
+		
+		it "works" do
+			output, error = eval_js!(%q{
+				var Database = require('optapdb/database.js').Database;
+				var database = new Database("tmp/db");
+				var buffers  = [new Buffer("hello "), new Buffer("world")];
+				var checksum = new Buffer("1234");
+				database.add("foo", 123 * 60 * 60 * 24, buffers, checksum, function(err) {
+					if (err) {
+						console.log(err);
+						process.exit(1);
+					}
+					console.log('Success');
+				});
+			})
+			contents = File.read(@dbpath + "/foo/123/data")
+			contents.should ==
+				# Header
+				"ET" +
+				# Length
+				["hello world".size].pack('N') +
+				# Checksum
+				"1234" +
+				# Data
+				"hello world"
 		end
 	end
 end
