@@ -1,6 +1,6 @@
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
-describe "Toc" do
+describe "Database" do
 	before :each do
 		@dbpath = 'tmp/db'
 	end
@@ -9,19 +9,19 @@ describe "Toc" do
 		before :each do
 			@code = %q{
 				var sys = require('sys');
-				var Toc = require('optapdb/toc').Toc;
-				var toc = new Toc("tmp/db");
-				toc.reload(function(err) {
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.reload(function(err) {
 					if (err) {
 						sys.print(err, "\n");
 						return;
 					}
 					
 					sys.print("success\n");
-					sys.print(toc.groupCount, " groups\n");
+					sys.print(database.groupCount, " groups\n");
 					var groupName, group, timeEntryName, timeEntry;
-					for (groupName in toc.groups) {
-						group = toc.groups[groupName];
+					for (groupName in database.groups) {
+						group = database.groups[groupName];
 						sys.print("Group ", groupName, ": ",
 							group.timeEntryCount, " time entries\n");
 						for (timeEntryName in group.timeEntries) {
@@ -119,16 +119,16 @@ describe "Toc" do
 			output, error = eval_js!(%q{
 				var sys = require('sys');
 				var fs  = require('fs');
-				var Toc = require('optapdb/toc').Toc;
-				var toc = new Toc("tmp/db");
-				toc.findOrCreateGroup('foo', function(err) {
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.findOrCreateGroup('foo', function(err) {
 					if (err) {
 						sys.print("ERROR: ", err, "\n");
 						process.exit(1);
 					}
 				});
 				try {
-					toc.reload(function(err) {
+					database.reload(function(err) {
 						if (err) {
 							sys.print("ERROR: ", err, "\n");
 							process.exit(1);
@@ -147,15 +147,15 @@ describe "Toc" do
 			FileUtils.mkdir_p(@dbpath)
 			@find_or_create_foo_after_reload = %q{
 				var sys = require('sys');
-				var Toc = require('optapdb/toc').Toc;
-				var toc = new Toc("tmp/db");
-				toc.reload(function(err) {
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.reload(function(err) {
 					if (err) {
 						sys.print("ERROR: ", err, "\n");
 						process.exit(1);
 					}
 					
-					toc.findOrCreateGroup('foo', function(err) {
+					database.findOrCreateGroup('foo', function(err) {
 						if (err) {
 							sys.print("ERROR: ", err, "\n");
 							process.exit(1);
@@ -191,10 +191,10 @@ describe "Toc" do
 		it "returns the given group if mkdir fails with EEXIST" do
 			output, error = eval_js!(%q{
 				var sys = require('sys');
-				var Toc = require('optapdb/toc').Toc;
-				var toc = new Toc("tmp/db");
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
 				require('fs').mkdirSync('tmp/db/foo', 0700);
-				toc.findOrCreateGroup('foo', function(err) {
+				database.findOrCreateGroup('foo', function(err) {
 					if (err) {
 						sys.print("ERROR: ", err, "\n");
 						process.exit(1);
@@ -209,9 +209,9 @@ describe "Toc" do
 		it "works if invoked multiple times without waiting for the callback" do
 			output, error = eval_js!(%q{
 				var sys = require('sys');
-				var Toc = require('optapdb/toc').Toc;
-				var toc = new Toc("tmp/db");
-				toc.reload(function(err) {
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.reload(function(err) {
 					if (err) {
 						sys.print("ERROR: ", err, "\n");
 						process.exit(1);
@@ -225,9 +225,9 @@ describe "Toc" do
 						sys.print("Created\n");
 					}
 					
-					toc.findOrCreateGroup('foo', callback);
-					toc.findOrCreateGroup('foo', callback);
-					toc.findOrCreateGroup('foo', callback);
+					database.findOrCreateGroup('foo', callback);
+					database.findOrCreateGroup('foo', callback);
+					database.findOrCreateGroup('foo', callback);
 				});
 			})
 			File.directory?(@dbpath + "/foo").should be_true
