@@ -307,8 +307,13 @@ describe "Database" do
 	describe ".remove" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
-			FileUtils.mkdir_p(@dbpath + "/foo/456")
+			FileUtils.mkdir_p(@dbpath + "/foo/124")
+			FileUtils.mkdir_p(@dbpath + "/foo/125")
 			FileUtils.mkdir_p(@dbpath + "/bar")
+		end
+		
+		def dircount(dir)
+			return Dir.entries(dir).size - 2 # Ignore '.' and '..'
 		end
 		
 		it "supports deleting an entire group" do
@@ -328,9 +333,10 @@ describe "Database" do
 			output.should == "Removed\n"
 			File.exist?(@dbpath + "/foo").should be_false
 			File.exist?(@dbpath + "/bar").should be_true
+			dircount(@dbpath).should == 1
 		end
 		
-		it "supports deleting just a time entry inside a group" do
+		it "can also delete all time entries older than the given timestamp inside a group" do
 			output, error = eval_js!(%q{
 				var Database = require('optapdb/database.js').Database;
 				var database = new Database("tmp/db");
@@ -339,15 +345,17 @@ describe "Database" do
 						console.log("Error:", err);
 						process.exit(1);
 					}
-					database.remove("foo", 123, function() {
+					database.remove("foo", 125, function() {
 						console.log("Removed");
 					});
 				});
 			})
 			output.should == "Removed\n"
 			File.exist?(@dbpath + "/foo/123").should be_false
-			File.exist?(@dbpath + "/foo/456").should be_true
+			File.exist?(@dbpath + "/foo/124").should be_false
+			File.exist?(@dbpath + "/foo/125").should be_true
 			File.exist?(@dbpath + "/bar").should be_true
+			dircount(@dbpath + "/foo").should == 1
 		end
 	end
 end
