@@ -120,55 +120,27 @@ describe "Database" do
 			eval_js!(@code)
 			File.exist?(@dbpath + "/foo/123/data").should be_true
 		end
-		
-		it "throws an error if a group is being created while reloading" do
-			FileUtils.mkdir_p(@dbpath)
-			output, error = eval_js!(%q{
-				var sys = require('sys');
-				var fs  = require('fs');
-				var Database = require('optapdb/database').Database;
-				var database = new Database("tmp/db");
-				database.findOrCreateGroup('foo', function(err) {
-					if (err) {
-						sys.print("ERROR: ", err, "\n");
-						process.exit(1);
-					}
-				});
-				try {
-					database.reload(function(err) {
-						if (err) {
-							sys.print("ERROR: ", err, "\n");
-							process.exit(1);
-						}
-					});
-				} catch (e) {
-					sys.print("Got expected error\n");
-				}
-			})
-			output.should == "Got expected error\n"
-		end
 	end
 	
 	describe ".findOrCreateGroup" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@find_or_create_foo_after_reload = %q{
-				var sys = require('sys');
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
 				database.reload(function(err) {
 					if (err) {
-						sys.print("ERROR: ", err, "\n");
+						console.log("ERROR:", err);
 						process.exit(1);
 					}
 					
-					database.findOrCreateGroup('foo', function(err) {
-						if (err) {
-							sys.print("ERROR: ", err, "\n");
-							process.exit(1);
-						}
-						sys.print("Created\n");
-					});
+					try {
+						database.findOrCreateGroup('foo');
+						console.log("Created");
+					} catch (err) {
+						console.log("ERROR:", err);
+						process.exit(1);
+					}
 				});
 			}
 		end
@@ -197,17 +169,12 @@ describe "Database" do
 		
 		it "returns the given group if mkdir fails with EEXIST" do
 			output, error = eval_js!(%q{
-				var sys = require('sys');
+				var fs = require('fs');
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
-				require('fs').mkdirSync('tmp/db/foo', 0700);
-				database.findOrCreateGroup('foo', function(err) {
-					if (err) {
-						sys.print("ERROR: ", err, "\n");
-						process.exit(1);
-					}
-					sys.print("Created\n");
-				});
+				fs.mkdirSync('tmp/db/foo', 0700);
+				database.findOrCreateGroup('foo');
+				console.log("Created");
 			})
 			File.directory?(@dbpath + "/foo").should be_true
 			output.should include("Created")
@@ -224,17 +191,12 @@ describe "Database" do
 						process.exit(1);
 					}
 					
-					function callback(err) {
-						if (err) {
-							sys.print("ERROR: ", err, "\n");
-							process.exit(1);
-						}
-						sys.print("Created\n");
-					}
-					
-					database.findOrCreateGroup('foo', callback);
-					database.findOrCreateGroup('foo', callback);
-					database.findOrCreateGroup('foo', callback);
+					database.findOrCreateGroup('foo');
+					sys.print("Created\n");
+					database.findOrCreateGroup('foo');
+					sys.print("Created\n");
+					database.findOrCreateGroup('foo');
+					sys.print("Created\n");
 				});
 			})
 			File.directory?(@dbpath + "/foo").should be_true
@@ -246,22 +208,15 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@code = %q{
-				var sys = require('sys');
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
 				database.reload(function(err) {
 					if (err) {
-						sys.print("ERROR: ", err, "\n");
+						console.log("ERROR:", err);
 						process.exit(1);
 					}
-					
-					database.findOrCreateTimeEntry('foo', 123, function(err) {
-						if (err) {
-							sys.print("ERROR: ", err, "\n");
-							process.exit(1);
-						}
-						sys.print("Created\n");
-					});
+					var timeEntry = database.findOrCreateTimeEntry('foo', 123);
+					console.log("Created: size =", timeEntry.size);
 				});
 			}
 		end
@@ -279,6 +234,21 @@ describe "Database" do
 			File.directory?(@dbpath + "/foo/123").should be_true
 			output.should include("Created")
 		end
+		
+		it "queries the existing data file size if the time entry already exists" do
+			FileUtils.mkdir_p(@dbpath + "/foo/123")
+			File.open(@dbpath + "/foo/123/data", "w") do |f|
+				f.write("abc")
+			end
+			output, error = eval_js!(%q{
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
+				console.log("Created: size =", timeEntry.dataFileSize);
+			})
+			puts output
+			output.should include("Created: size = 3\n")
+		end
 	end
 	
 	describe ".add" do
@@ -292,7 +262,7 @@ describe "Database" do
 				var database = new Database("tmp/db");
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
 				var checksum = new Buffer("1234");
-				database.add("foo", 123 * 60 * 60 * 24, buffers, checksum, function(err) {
+				database.add("foo", 123, buffers, checksum, function(err) {
 					if (err) {
 						console.log(err);
 						process.exit(1);
@@ -310,6 +280,30 @@ describe "Database" do
 				"1234" +
 				# Data
 				"hello world"
+		end
+	end
+	
+	describe ".remove" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath + "/foo")
+		end
+		
+		it "works" do
+			output, error = eval_js!(%q{
+				var Database = require('optapdb/database.js').Database;
+				var database = new Database("tmp/db");
+				database.reload(function(err) {
+					if (err) {
+						console.log("Error:", err);
+						process.exit(1);
+					}
+					database.remove("foo", undefined, function() {
+						console.log("Removed");
+					});
+				});
+			})
+			output.should == "Removed\n"
+			File.exist?(@dbpath + "/foo").should be_false
 		end
 	end
 end
