@@ -246,7 +246,6 @@ describe "Database" do
 				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
 				console.log("Created: size =", timeEntry.dataFileSize);
 			})
-			puts output
 			output.should include("Created: size = 3\n")
 		end
 	end
@@ -285,10 +284,12 @@ describe "Database" do
 	
 	describe ".remove" do
 		before :each do
-			FileUtils.mkdir_p(@dbpath + "/foo")
+			FileUtils.mkdir_p(@dbpath + "/foo/123")
+			FileUtils.mkdir_p(@dbpath + "/foo/456")
+			FileUtils.mkdir_p(@dbpath + "/bar")
 		end
 		
-		it "works" do
+		it "supports deleting an entire group" do
 			output, error = eval_js!(%q{
 				var Database = require('optapdb/database.js').Database;
 				var database = new Database("tmp/db");
@@ -304,6 +305,27 @@ describe "Database" do
 			})
 			output.should == "Removed\n"
 			File.exist?(@dbpath + "/foo").should be_false
+			File.exist?(@dbpath + "/bar").should be_true
+		end
+		
+		it "supports deleting just a time entry inside a group" do
+			output, error = eval_js!(%q{
+				var Database = require('optapdb/database.js').Database;
+				var database = new Database("tmp/db");
+				database.reload(function(err) {
+					if (err) {
+						console.log("Error:", err);
+						process.exit(1);
+					}
+					database.remove("foo", 123, function() {
+						console.log("Removed");
+					});
+				});
+			})
+			output.should == "Removed\n"
+			File.exist?(@dbpath + "/foo/123").should be_false
+			File.exist?(@dbpath + "/foo/456").should be_true
+			File.exist?(@dbpath + "/bar").should be_true
 		end
 	end
 end
