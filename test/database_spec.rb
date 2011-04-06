@@ -250,25 +250,26 @@ describe "Database" do
 		end
 	end
 	
-	describe ".add" do
+	describe "adding and getting" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
-		end
-		
-		it "works" do
-			output, error = eval_js!(%q{
-				var Database = require('optapdb/database.js').Database;
+			@add_code = %Q{
+				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
-				var checksum = new Buffer("1234");
-				database.add("foo", 123, buffers, checksum, function(err) {
+				var checksum = require('optapdb/crc32').toBuffer(buffers);
+				database.add("foo", 123, buffers, checksum, function(err, offset) {
 					if (err) {
 						console.log(err);
 						process.exit(1);
 					}
-					console.log('Success');
+					console.log("Added at", offset);
 				});
-			})
+			}
+		end
+		
+		specify "adding works" do
+			output, error = eval_js!(@add_code)
 			contents = File.read(@dbpath + "/foo/123/data")
 			contents.should ==
 				# Header
@@ -276,9 +277,30 @@ describe "Database" do
 				# Length
 				["hello world".size].pack('N') +
 				# Checksum
-				"1234" +
+				"\x00\x00\x0d\x4a" +
 				# Data
 				"hello world"
+			output.should == "Added at 0\n"
+		end
+		
+		specify "getting works" do
+			eval_js!(@add_code)
+			output = eval_js!(@add_code).first
+			offset = 2 + 4 + 4 + 'hello world'.size
+			output.should include("Added at #{offset}\n")
+			
+			output, error = eval_js!(%Q{
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.get("foo", 123, #{offset}, function(err, data) {
+					if (err) {
+						console.log(err);
+						process.exit(1);
+					}
+					console.log("Data:", data.toString('ascii'));
+				});
+			})
+			output.should include("Data: hello world\n")
 		end
 	end
 	
