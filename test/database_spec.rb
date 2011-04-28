@@ -12,27 +12,20 @@ describe "Database" do
 				var sys = require('sys');
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
-				database.reload(function(err) {
-					if (err) {
-						sys.print(err, "\n");
-						return;
+				database.reload();
+				sys.print(database.groupCount, " groups\n");
+				var groupName, group, timeEntryName, timeEntry;
+				for (groupName in database.groups) {
+					group = database.groups[groupName];
+					sys.print("Group ", groupName, ": ",
+						group.timeEntryCount, " time entries\n");
+					for (timeEntryName in group.timeEntries) {
+						timeEntry = group.timeEntries[timeEntryName];
+						sys.print("Time entry ", groupName, "/",
+							timeEntryName, ": size=",
+							timeEntry.dataFileSize, "\n");
 					}
-					
-					sys.print("success\n");
-					sys.print(database.groupCount, " groups\n");
-					var groupName, group, timeEntryName, timeEntry;
-					for (groupName in database.groups) {
-						group = database.groups[groupName];
-						sys.print("Group ", groupName, ": ",
-							group.timeEntryCount, " time entries\n");
-						for (timeEntryName in group.timeEntries) {
-							timeEntry = group.timeEntries[timeEntryName];
-							sys.print("Time entry ", groupName, "/",
-								timeEntryName, ": size=",
-								timeEntry.dataFileSize, "\n");
-						}
-					}
-				});
+				}
 			}
 		end
 		
@@ -63,56 +56,55 @@ describe "Database" do
 		end
 	
 		it "generates an error if the database directory does not exist" do
-			output, error = eval_js!(@code)
-			output.should include("Cannot read directory #{@dbpath}")
-			output.should include("ENOENT")
+			status, output, error = eval_js(@code)
+			error.should include("No such file or directory '#{@dbpath}'")
+			error.should include("ENOENT")
 		end
 	
 		it "generates an error if the database directory is not readable" do
 			FileUtils.mkdir_p(@dbpath + "/foo")
 			File.chmod(0300, @dbpath)
-			output, error = eval_js!(@code)
-			output.should include("Cannot read directory #{@dbpath}")
-			output.should include("EACCES")
+			status, output, error = eval_js(@code)
+			error.should include("Permission denied '#{@dbpath}'")
+			error.should include("EACCES")
 		end
 	
 		it "generates an error if the database directory is not executable" do
 			FileUtils.mkdir_p(@dbpath + "/foo")
 			File.chmod(0600, @dbpath)
-			output, error = eval_js!(@code)
-			output.should include("Cannot stat #{@dbpath}/foo")
-			output.should include("EACCES")
+			status, output, error = eval_js(@code)
+			error.should include("Permission denied '#{@dbpath}/foo'")
+			error.should include("EACCES")
 		end
 	
 		it "generates an error if a group in the database directory is not readable" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0300, @dbpath + "/foo")
-			output, error = eval_js!(@code)
-			output.should include("Cannot read directory #{@dbpath}/foo")
-			output.should include("EACCES")
+			status, output, error = eval_js(@code)
+			error.should include("Permission denied '#{@dbpath}/foo'")
+			error.should include("EACCES")
 		end
 	
 		it "generates an error if a group in the database directory is not executable" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0600, @dbpath + "/foo")
-			output, error = eval_js!(@code)
-			output.should include("Cannot stat directory #{@dbpath}/foo/123")
-			output.should include("EACCES")
+			status, output, error = eval_js(@code)
+			error.should include("Permission denied '#{@dbpath}/foo/123'")
+			error.should include("EACCES")
 		end
 	
 		it "doesn't generate an error if a time entry in the database directory is not readable" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0300, @dbpath + "/foo/123")
-			output, error = eval_js!(@code)
-			output.should include("success")
+			lambda { eval_js!(@code) }.should_not raise_error
 		end
 	
 		it "generates an error if a time entry in the database directory is not executable" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0600, @dbpath + "/foo/123")
-			output, error = eval_js!(@code)
-			output.should include("Cannot stat data file #{@dbpath}/foo/123/data")
-			output.should include("EACCES")
+			status, output, error = eval_js(@code)
+			error.should include("Permission denied '#{@dbpath}/foo/123/data'")
+			error.should include("EACCES")
 		end
 		
 		it "creates empty data files in empty time entry directories" do
@@ -128,20 +120,14 @@ describe "Database" do
 			@find_or_create_foo_after_reload = %q{
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
-				database.reload(function(err) {
-					if (err) {
-						console.log("ERROR:", err);
-						process.exit(1);
-					}
-					
-					try {
-						database.findOrCreateGroup('foo');
-						console.log("Created");
-					} catch (err) {
-						console.log("ERROR:", err);
-						process.exit(1);
-					}
-				});
+				database.reload();
+				try {
+					database.findOrCreateGroup('foo');
+					console.log("Created");
+				} catch (err) {
+					console.log("ERROR:", err);
+					process.exit(1);
+				}
 			}
 		end
 		
@@ -185,19 +171,13 @@ describe "Database" do
 				var sys = require('sys');
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
-				database.reload(function(err) {
-					if (err) {
-						sys.print("ERROR: ", err, "\n");
-						process.exit(1);
-					}
-					
-					database.findOrCreateGroup('foo');
-					sys.print("Created\n");
-					database.findOrCreateGroup('foo');
-					sys.print("Created\n");
-					database.findOrCreateGroup('foo');
-					sys.print("Created\n");
-				});
+				database.reload();
+				database.findOrCreateGroup('foo');
+				sys.print("Created\n");
+				database.findOrCreateGroup('foo');
+				sys.print("Created\n");
+				database.findOrCreateGroup('foo');
+				sys.print("Created\n");
 			})
 			File.directory?(@dbpath + "/foo").should be_true
 			count_line(output, "Created").should == 3
@@ -210,14 +190,9 @@ describe "Database" do
 			@code = %q{
 				var Database = require('optapdb/database').Database;
 				var database = new Database("tmp/db");
-				database.reload(function(err) {
-					if (err) {
-						console.log("ERROR:", err);
-						process.exit(1);
-					}
-					var timeEntry = database.findOrCreateTimeEntry('foo', 123);
-					console.log("Created: size =", timeEntry.size);
-				});
+				database.reload();
+				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
+				console.log("Created: size =", timeEntry.size);
 			}
 		end
 		
@@ -254,10 +229,11 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			@add_code = %Q{
-				var Database = require('optapdb/database').Database;
+				var Database = require('optapdb/database.js').Database;
+				var CRC32    = require('optapdb/crc32.js');
 				var database = new Database("tmp/db");
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
-				var checksum = require('optapdb/crc32').toBuffer(buffers);
+				var checksum = CRC32.toBuffer(buffers);
 				database.add("foo", 123, buffers, checksum, function(err, offset) {
 					if (err) {
 						console.log(err);
@@ -320,14 +296,9 @@ describe "Database" do
 			output, error = eval_js!(%q{
 				var Database = require('optapdb/database.js').Database;
 				var database = new Database("tmp/db");
-				database.reload(function(err) {
-					if (err) {
-						console.log("Error:", err);
-						process.exit(1);
-					}
-					database.remove("foo", undefined, function() {
-						console.log("Removed");
-					});
+				database.reload();
+				database.remove("foo", undefined, function() {
+					console.log("Removed");
 				});
 			})
 			output.should == "Removed\n"
@@ -340,14 +311,9 @@ describe "Database" do
 			output, error = eval_js!(%q{
 				var Database = require('optapdb/database.js').Database;
 				var database = new Database("tmp/db");
-				database.reload(function(err) {
-					if (err) {
-						console.log("Error:", err);
-						process.exit(1);
-					}
-					database.remove("foo", 125, function() {
-						console.log("Removed");
-					});
+				database.reload();
+				database.remove("foo", 125, function() {
+					console.log("Removed");
 				});
 			})
 			output.should == "Removed\n"
