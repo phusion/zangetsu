@@ -14,6 +14,8 @@ describe "Server" do
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
 		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
+		@server_socket.listen(50)
+		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 		@code = %Q{
 			var Server = require('optapdb/server').Server;
 			var server = new Server("tmp/db");
@@ -44,12 +46,9 @@ describe "Server" do
 			response['protocolMajor'].should == 1
 			response['protocolMinor'].should == 0
 			response['serverName'].should =~ /OptapDB/
-			p response
 			
 			write_json({})
-			p 1
 			read_json.should == { 'status' => 'ok' }
-			p 2
 		end
 	end
 	

@@ -1,6 +1,7 @@
 require 'rubygems'
 require 'fileutils'
 require 'socket'
+require 'fcntl'
 require 'timeout'
 require 'json'
 
@@ -59,15 +60,15 @@ module SpecHelper
 		end
 	end
 	
-	def eval_js(js, input = nil)
-		proc = async_eval_js(js, input)
+	def eval_js(js, options = {})
+		proc = async_eval_js(js, options)
 		return proc.close(false)
 	ensure
 		proc.discard if proc
 	end
 	
-	def eval_js!(js, input = nil)
-		exit_code, output, error = eval_js(js)
+	def eval_js!(js, options = {})
+		exit_code, output, error = eval_js(js, options)
 		if exit_code == 0
 			return [output, error]
 		else
@@ -77,7 +78,7 @@ module SpecHelper
 		end
 	end
 	
-	def async_eval_js(js, input = nil)
+	def async_eval_js(js, options = {})
 		@_counter = 0 if !@_counter
 		@_counter += 1
 		tail = "#{Process.pid}-#{Thread.current.object_id}-#{@_counter}"
@@ -90,15 +91,17 @@ module SpecHelper
 			f.write(js.strip)
 		end
 		File.open(proc.input_file, "w") do |f|
-			f.write(input) if input
+			f.write(options[:input]) if options[:input]
 		end
 		File.open(proc.output_file, "w").close
 		File.open(proc.error_file, "w").close
 		proc.pid = fork do
 			ENV['NODE_PATH'] = "#{ROOT}/lib"
 			STDIN.reopen(proc.input_file, "r")
-			STDOUT.reopen(proc.output_file, "w")
-			STDERR.reopen(proc.error_file, "w")
+			if !options.has_key?(:capture) || !options[:capture]
+				STDOUT.reopen(proc.output_file, "w")
+				STDERR.reopen(proc.error_file, "w")
+			end
 			exec("node", proc.script_file)
 		end
 		return proc
