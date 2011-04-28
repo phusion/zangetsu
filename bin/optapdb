@@ -1,0 +1,3 @@
+#!/usr/bin/env ruby
+LIBDIR = File.expand_path(File.dirname(__FILE__) + "/../lib")
+exec("node", "#{LIBDIR}/optapdb/app.js")
