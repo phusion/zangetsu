@@ -225,15 +225,61 @@ describe "Database" do
 		end
 	end
 	
-	describe "adding and getting" do
+	describe ".findTimeEntry" do
 		before :each do
-			FileUtils.mkdir_p(@dbpath + "/foo/123")
+			FileUtils.mkdir_p(@dbpath)
+			@code = %q{
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.reload();
+				var timeEntry = database.findTimeEntry('foo', 123);
+				if (timeEntry) {
+					console.log("Found: size =", timeEntry.dataFileSize);
+				} else {
+					console.log("Not found");
+				}
+				console.log("Group in toc:", !!database.groups['foo']);
+				console.log("TimeEntry in toc:",
+					!!(database.groups['foo'] &&
+						database.groups['foo'].timeEntries[123]));
+			}
+		end
+		
+		it "returns undefined if the given group directory is not in the table of contents" do
+			output, error = eval_js!(@code)
+			output.should include("Not found")
+			output.should include("Group in toc: false")
+			output.should include("TimeEntry in toc: false")
+		end
+		
+		it "returns undefined if the given time entry directory is not in the table of contents" do
+			FileUtils.mkdir_p("#{@dbpath}/foo")
+			output, error = eval_js!(@code)
+			output.should include("Not found")
+			output.should include("Group in toc: true")
+			output.should include("TimeEntry in toc: false")
+		end
+		
+		it "returns a TimeEntry if it exists in the table of contents" do
+			FileUtils.mkdir_p("#{@dbpath}/foo/123")
+			File.open("#{@dbpath}/foo/123/data", "w") { |f| f.write("ab") }
+			output, error = eval_js!(@code)
+			output.should include("Found: size = 2\n")
+			output.should include("Group in toc: true")
+			output.should include("TimeEntry in toc: true")
+		end
+	end
+	
+	describe ".add" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath)
 			@add_code = %Q{
 				var Database = require('optapdb/database.js').Database;
 				var CRC32    = require('optapdb/crc32.js');
 				var database = new Database("tmp/db");
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
 				var checksum = CRC32.toBuffer(buffers);
+				database.reload();
 				database.add("foo", 123, buffers, checksum, function(err, offset) {
 					if (err) {
 						console.log(err);
@@ -244,7 +290,7 @@ describe "Database" do
 			}
 		end
 		
-		specify "adding works" do
+		it "works" do
 			output, error = eval_js!(@add_code)
 			contents = File.read(@dbpath + "/foo/123/data")
 			contents.should ==
@@ -258,25 +304,64 @@ describe "Database" do
 				"hello world"
 			output.should == "Added at 0\n"
 		end
+	end
+	
+	describe ".get" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath)
+			@add_code = %Q{
+				var Database = require('optapdb/database.js').Database;
+				var CRC32    = require('optapdb/crc32.js');
+				var database = new Database("tmp/db");
+				var buffers  = [new Buffer("hello "), new Buffer("world")];
+				var checksum = CRC32.toBuffer(buffers);
+				database.reload();
+				database.add("foo", 123, buffers, checksum, function(err, offset) {
+					if (err) {
+						console.log(err);
+						process.exit(1);
+					}
+					console.log("Added at", offset);
+				});
+			}
+		end
 		
-		specify "getting works" do
+		def run_get_function(group, day_timestamp, offset)
+			return eval_js!(%Q{
+				var Database = require('optapdb/database').Database;
+				var database = new Database("tmp/db");
+				database.reload();
+				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, data) {
+					if (err) {
+						console.log("Error:", err);
+					} else {
+						console.log("Data:", data.toString('ascii'));
+					}
+				});
+			})
+		end
+		
+		it "works" do
 			eval_js!(@add_code)
 			output = eval_js!(@add_code).first
 			offset = 2 + 4 + 4 + 'hello world'.size
 			output.should include("Added at #{offset}\n")
 			
-			output, error = eval_js!(%Q{
-				var Database = require('optapdb/database').Database;
-				var database = new Database("tmp/db");
-				database.get("foo", 123, #{offset}, function(err, data) {
-					if (err) {
-						console.log(err);
-						process.exit(1);
-					}
-					console.log("Data:", data.toString('ascii'));
-				});
-			})
+			output, error = run_get_function('foo', 123, offset)
 			output.should include("Data: hello world\n")
+		end
+		
+		it "returns a not-found error if the requested group does not exist" do
+			eval_js!(@add_code)
+			output, error = run_get_function('bar', 123, 0)
+			output.should include("Error: not-found\n")
+		end
+		
+		it "returns a not-found error if the requested time entry does not exist" do
+			eval_js!(@add_code)
+			FileUtils.mkdir_p("#{@dbpath}/foo/123")
+			output, error = run_get_function('foo', 456, 0)
+			output.should include("Error: not-found\n")
 		end
 	end
 	
