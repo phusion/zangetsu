@@ -18,7 +18,7 @@ describe "Replication" do
 		@server_socket.close if @server_socket
 	end
 	
-	def start_server(role = :master)
+	def really_start_server(role)
 		@code = %Q{
 			var Server = require('optapdb/server');
 			var server = new Server.Server("tmp/db");
@@ -36,14 +36,27 @@ describe "Replication" do
 		@connection.sync = true
 	end
 	
-	def handshake(args = { :identity => 'replica-member' })
-		read_json
-		write_json(args)
-		read_json.should == { 'status' => 'ok' }
-	end
-	
-	describe "when connecting slave to master" do
-		before :each do
+	describe "when joining a master server" do
+		def start_server
+			really_start_server(:master)
+		end
+		
+		def handshake(args = { :identity => 'replica-member' })
+			read_json
+			write_json(args)
+			return read_json
+		end
+		
+		it "informs about both sides' roles during handshake" do
+			start_server
+			handshake.should == {
+				'status' => 'ok',
+				'your_role' => 'slave',
+				'my_role' => 'master'
+			}
+		end
+		
+		it "synchronizes the joining server" do
 			FileUtils.mkdir_p("#{@dbpath}/baz/2")
 			File.open("#{@dbpath}/baz/2/data", "wb") do |f|
 				f.write("hello world")
@@ -63,9 +76,7 @@ describe "Replication" do
 			
 			start_server
 			handshake
-		end
-		
-		specify "the master synchronizes the slave" do
+			
 			# It first asks for the slave's TOC.
 			read_json.should == { 'command' => 'getToc' }
 			write_json(
@@ -128,9 +139,90 @@ describe "Replication" do
 				'size' => 20, 'data' => 'x' * 20)
 		end
 		
-		specify "the master does not send group removal commands if there are " +
-		        "no groups that only exist on the slave" do
+		it "doesn't send removal commands if there's nothing to prune" do
 			pending
 		end
+		
+		it "doesn't send add commands if there's nothing to fill" do
+			pending
+		end
+		
+		specify "if anything was removed from the database while synchronization " +
+			"is in progress then those concurrent removals won't be missed" do
+			pending
+		end
+		
+		specify "if anything was written to the database while synchronization " +
+			"is in progress then those concurrent adds won't be missed" do
+			pending
+		end
+		
+		specify "when synchronizing, large data files are streamed in small chunks" do
+			FileUtils.mkdir_p("#{@dbpath}/foo/123")
+			File.open("#{@dbpath}/foo/123/data", "wb") do |f|
+				f.write("x" * (1024 * 80))
+			end
+			start_server
+			handshake
+			
+			read_json.should == { 'command' => 'getToc' }
+			write_json(
+				:foo => {
+					'123' => { :size => 10 }
+				}
+			)
+			
+			read_json.should == {
+				'command' => 'addRaw',
+				'group' => 'foo',
+				'dayTimestamp' => 123,
+				'size' => 32 * 1024
+			}
+			@connection.read(32 * 1024).should == "x" * (32 * 1024)
+			
+			read_json.should == {
+				'command' => 'addRaw',
+				'group' => 'foo',
+				'dayTimestamp' => 123,
+				'size' => 32 * 1024
+			}
+			@connection.read(32 * 1024).should == "x" * (32 * 1024)
+			
+			read_json.should == {
+				'command' => 'addRaw',
+				'group' => 'foo',
+				'dayTimestamp' => 123,
+				'size' => 16374
+			}
+			@connection.read(16374).should == "x" * 16374
+		end
+		
+		it "sends the topology after synchronization finishes"
+	end
+	
+	describe "when joining a slave server" do
+		def start_server
+			really_start_server(:slave)
+		end
+		
+		def handshake(args = { :identity => 'replica-member' })
+			read_json
+			write_json(args)
+			return read_json
+		end
+		
+		it "informs about both sides' roles during handshake" do
+			start_server
+			handshake.should == {
+				'status' => 'ok',
+				'your_role' => 'slave',
+				'my_role' => 'slave'
+			}
+			should_never_happen do
+				socket_readable?(@connection)
+			end
+		end
+		
+		it "sends the topology"
 	end
 end
