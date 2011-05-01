@@ -7,7 +7,7 @@ describe "SocketInputWrapper" do
 		@header = %q{
 			var events = require('events');
 			var util   = require('util');
-			var SocketInputWrapper = require('optapdb/socket_input_wrapper').SocketInputWrapper;
+			var SocketInputWrapper = require('byakugan/socket_input_wrapper').SocketInputWrapper;
 			
 			function DummySocket() {
 				events.EventEmitter.call(this);

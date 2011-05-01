@@ -10,7 +10,7 @@ describe "Database" do
 		before :each do
 			@code = %q{
 				var sys = require('sys');
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				sys.print(database.groupCount, " groups\n");
@@ -118,7 +118,7 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@find_or_create_foo_after_reload = %q{
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				try {
@@ -156,7 +156,7 @@ describe "Database" do
 		it "returns the given group if mkdir fails with EEXIST" do
 			output, error = eval_js!(%q{
 				var fs = require('fs');
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				fs.mkdirSync('tmp/db/foo', 0700);
 				database.findOrCreateGroup('foo');
@@ -169,7 +169,7 @@ describe "Database" do
 		it "works if invoked multiple times without waiting for the callback" do
 			output, error = eval_js!(%q{
 				var sys = require('sys');
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				database.findOrCreateGroup('foo');
@@ -188,7 +188,7 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@code = %q{
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
@@ -216,7 +216,7 @@ describe "Database" do
 				f.write("abc")
 			end
 			output, error = eval_js!(%q{
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
 				console.log("Created: size =", timeEntry.dataFileSize);
@@ -229,7 +229,7 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@code = %q{
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				var timeEntry = database.findTimeEntry('foo', 123);
@@ -274,8 +274,8 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@add_code = %Q{
-				var Database = require('optapdb/database.js').Database;
-				var CRC32    = require('optapdb/crc32.js');
+				var Database = require('byakugan/database.js').Database;
+				var CRC32    = require('byakugan/crc32.js');
 				var database = new Database("tmp/db");
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
 				var checksum = CRC32.toBuffer(buffers);
@@ -310,8 +310,8 @@ describe "Database" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@add_code = %Q{
-				var Database = require('optapdb/database.js').Database;
-				var CRC32    = require('optapdb/crc32.js');
+				var Database = require('byakugan/database.js').Database;
+				var CRC32    = require('byakugan/crc32.js');
 				var database = new Database("tmp/db");
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
 				var checksum = CRC32.toBuffer(buffers);
@@ -328,7 +328,7 @@ describe "Database" do
 		
 		def run_get_function(group, day_timestamp, offset)
 			return eval_js!(%Q{
-				var Database = require('optapdb/database').Database;
+				var Database = require('byakugan/database').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, data) {
@@ -379,7 +379,7 @@ describe "Database" do
 		
 		it "supports deleting an entire group" do
 			output, error = eval_js!(%q{
-				var Database = require('optapdb/database.js').Database;
+				var Database = require('byakugan/database.js').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				database.remove("foo", undefined, function() {
@@ -394,7 +394,7 @@ describe "Database" do
 		
 		it "can also delete all time entries older than the given timestamp inside a group" do
 			output, error = eval_js!(%q{
-				var Database = require('optapdb/database.js').Database;
+				var Database = require('byakugan/database.js').Database;
 				var database = new Database("tmp/db");
 				database.reload();
 				database.remove("foo", 125, function() {

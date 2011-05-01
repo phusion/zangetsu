@@ -4,7 +4,7 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 describe "Server" do
 	before :all do
 		output, error = eval_js!(%Q{
-			var TimeEntry = require('optapdb/time_entry.js');
+			var TimeEntry = require('byakugan/time_entry.js');
 			console.log(TimeEntry.HEADER_SIZE);
 		})
 		@header_size = output.to_i
@@ -17,7 +17,7 @@ describe "Server" do
 		@server_socket.listen(50)
 		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 		@code = %Q{
-			var Server = require('optapdb/server').Server;
+			var Server = require('byakugan/server').Server;
 			var server = new Server("tmp/db");
 			server.listenFD(#{@server_socket.fileno});
 		}
@@ -45,7 +45,7 @@ describe "Server" do
 			response = read_json
 			response['protocolMajor'].should == 1
 			response['protocolMinor'].should == 0
-			response['serverName'].should =~ /OptapDB/
+			response['serverName'].should =~ /byakugan/i
 			
 			write_json({})
 			read_json.should == { 'status' => 'ok' }

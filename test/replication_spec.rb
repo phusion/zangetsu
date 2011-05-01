@@ -20,7 +20,7 @@ describe "Replication" do
 	
 	def really_start_server(role)
 		@code = %Q{
-			var Server = require('optapdb/server');
+			var Server = require('byakugan/server');
 			var server = new Server.Server("tmp/db");
 		}
 		if role == :master
