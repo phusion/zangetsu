@@ -20,7 +20,7 @@ describe "Replication" do
 	
 	def really_start_server(role)
 		@code = %Q{
-			var Server = require('byakugan/server');
+			var Server = require('zangetsu/server');
 			var server = new Server.Server("tmp/db");
 		}
 		if role == :master

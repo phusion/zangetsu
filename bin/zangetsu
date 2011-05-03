@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-#  Byakugan - high-performance append-only database
+#  Zangetsu - high-performance append-only database
 #  Copyright (C) 2011  Phusion
 #
 #  This program is free software: you can redistribute it and/or modify
@@ -16,4 +16,4 @@
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 LIBDIR = File.expand_path(File.dirname(__FILE__) + "/../lib")
-exec("node", "#{LIBDIR}/byakugan/app.js")
+exec("node", "#{LIBDIR}/zangetsu/app.js")
