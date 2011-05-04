@@ -10,6 +10,7 @@ def configure(conf):
 	conf.check_tool('compiler_cxx')
 	conf.check_tool('node_addon')
 	conf.check_cxx(function_name = 'posix_fadvise', header_name = "fcntl.h", mandatory = False)
+	conf.check_cxx(function_name = 'posix_fallocate', header_name = "fcntl.h", mandatory = False)
 	conf.write_config_header('config.h')
 
 def build(bld):
