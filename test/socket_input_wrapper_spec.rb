@@ -218,6 +218,10 @@ describe "SocketInputWrapper" do
 					"Timeout; paused: true\n"
 			end
 		end
+		
+		describe "if the socket was disconnected" do
+			it "doesn't re-emit the remaining data"
+		end
 	end
 	
 	it "pauses the underlying socket" do
