@@ -6,6 +6,7 @@ require 'timeout'
 require 'json'
 
 TEST_SERVER_PORT = 3765
+DEBUG = ['1', 'yes', 'y', 'true'].include?(ENV['DEBUG'])
 
 module SpecHelper
 	ROOT = File.expand_path(File.dirname(__FILE__) + "/..")

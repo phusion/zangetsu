@@ -31,7 +31,7 @@ describe "Replication" do
 		@code << %Q{
 			server.listenFD(#{@server_socket.fileno});
 		}
-		@server = async_eval_js(@code, :capture => true)
+		@server = async_eval_js(@code, :capture => !DEBUG)
 		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
 		@connection.sync = true
 	end
@@ -127,6 +127,7 @@ describe "Replication" do
 				command = read_json
 				commands << command
 				command['data'] = @connection.read(command['size'])
+				write_json(:status => 'ok')
 			end
 			commands.should include('command' => 'addRaw',
 				'group' => 'baz', 'dayTimestamp' => 2,
@@ -179,6 +180,7 @@ describe "Replication" do
 				'size' => 32 * 1024
 			}
 			@connection.read(32 * 1024).should == "x" * (32 * 1024)
+			write_json(:status => 'ok')
 			
 			read_json.should == {
 				'command' => 'addRaw',
@@ -187,6 +189,7 @@ describe "Replication" do
 				'size' => 32 * 1024
 			}
 			@connection.read(32 * 1024).should == "x" * (32 * 1024)
+			write_json(:status => 'ok')
 			
 			read_json.should == {
 				'command' => 'addRaw',
@@ -195,6 +198,7 @@ describe "Replication" do
 				'size' => 16374
 			}
 			@connection.read(16374).should == "x" * 16374
+			write_json(:status => 'ok')
 		end
 		
 		it "sends the topology after synchronization finishes"
