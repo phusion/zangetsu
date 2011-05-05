@@ -2,6 +2,14 @@
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "Replication" do
+	before :all do
+		output, error = eval_js!(%Q{
+			var TimeEntry = require('zangetsu/time_entry.js');
+			console.log(TimeEntry.HEADER_SIZE);
+		})
+		@header_size = output.to_i
+	end
+	
 	before :each do
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
@@ -12,6 +20,7 @@ describe "Replication" do
 	
 	after :each do
 		@connection.close if @connection
+		@connection2.close if @connection2
 		if @server && !@server.closed?
 			@server.close
 		end
@@ -32,8 +41,13 @@ describe "Replication" do
 			server.listenFD(#{@server_socket.fileno});
 		}
 		@server = async_eval_js(@code, :capture => !DEBUG)
-		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
-		@connection.sync = true
+		@connection = connect_to_server
+	end
+	
+	def connect_to_server
+		socket = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
+		socket.sync = true
+		return socket
 	end
 	
 	describe "when joining a master server" do
@@ -41,10 +55,10 @@ describe "Replication" do
 			really_start_server(:master)
 		end
 		
-		def handshake(args = { :identity => 'replica-member' })
-			read_json
-			write_json(args)
-			return read_json
+		def handshake(connection = @connection, args = { :identity => 'replica-member' })
+			read_json(connection)
+			write_json(connection, args)
+			return read_json(connection)
 		end
 		
 		it "informs about both sides' roles during handshake" do
@@ -203,8 +217,48 @@ describe "Replication" do
 		
 		it "sends the topology after synchronization finishes"
 		
-		it "replicates add commands after synchronization is done"
-		it "replicates remove commands after synchronization is done"
+		it "replicates add and remove commands after synchronization is done" do
+			start_server
+			handshake
+			read_json.should == { 'command' => 'getToc' }
+			write_json({})
+			
+			@connection2 = connect_to_server
+			handshake(@connection2, {})
+			
+			write_json(@connection2,
+				:command => 'add',
+				:group => 'foo',
+				:timestamp => 48 * 60 * 60,
+				:size => "hello".size,
+				:opid => 1)
+			@connection2.write("hello")
+			
+			write_json(@connection2,
+				:command => 'remove',
+				:group => 'foo',
+				:timestamp => 96 * 60 * 60)
+			read_json(@connection2)['status'].should == 'ok'
+			
+			write_json(@connection2, :command => 'results')
+			read_json(@connection2)['status'].should == 'ok'
+			
+			read_json.should == {
+				'command' => 'addRaw',
+				'group' => 'foo',
+				'dayTimestamp' => 2,
+				'size' => @header_size + "hello".size
+			}
+			@connection.read(@header_size + "hello".size).should =~ /hello/
+			write_json(:status => 'ok')
+			
+			read_json.should == {
+				'command' => 'removeOne',
+				'group' => 'foo',
+				'dayTimestamp' => 2
+			}
+			write_json(:status => 'ok')
+		end
 	end
 	
 	describe "when joining a slave server" do
