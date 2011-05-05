@@ -202,6 +202,9 @@ describe "Replication" do
 		end
 		
 		it "sends the topology after synchronization finishes"
+		
+		it "replicates add commands after synchronization is done"
+		it "replicates remove commands after synchronization is done"
 	end
 	
 	describe "when joining a slave server" do
