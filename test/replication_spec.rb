@@ -119,10 +119,15 @@ describe "Replication" do
 			)
 			
 			# Then it commands the slave to delete nonexistant groups and time entries
-			# and time entries that are larger on the slave than on the master.
+			# and time entries that are larger on the slave than on the master,
+			# and to fill time entries that are smaller than on the master.
 			commands = []
-			5.times do
-				commands << read_json
+			8.times do
+				command = read_json
+				if command['size']
+					command['data'] = @connection.read(command['size'])
+				end
+				commands << command
 				write_json(:status => 'ok')
 			end
 			commands.should include('command' => 'remove', 'group' => 'foo')
@@ -133,16 +138,6 @@ describe "Replication" do
 				'group' => 'baz', 'dayTimestamp' => 3)
 			commands.should include('command' => 'removeOne',
 				'group' => 'baz', 'dayTimestamp' => 5)
-			
-			# Then it fills the time entries on the slave that are smaller
-			# than on the master.
-			commands.clear
-			3.times do
-				command = read_json
-				commands << command
-				command['data'] = @connection.read(command['size'])
-				write_json(:status => 'ok')
-			end
 			commands.should include('command' => 'addRaw',
 				'group' => 'baz', 'dayTimestamp' => 2,
 				'size' => 6, 'data' => ' world')
@@ -218,10 +213,20 @@ describe "Replication" do
 		it "sends the topology after synchronization finishes"
 		
 		it "replicates add and remove commands after synchronization is done" do
+			FileUtils.mkdir_p("#{@dbpath}/foo/2")
+			File.open("#{@dbpath}/foo/2/data", "w") do |f|
+				f.write("xxxxx")
+			end
 			start_server
 			handshake
 			read_json.should == { 'command' => 'getToc' }
-			write_json({})
+			write_json({
+				:foo => {
+					2 => {
+						:size => 5
+					}
+				}
+			})
 			
 			@connection2 = connect_to_server
 			handshake(@connection2, {})
@@ -233,6 +238,14 @@ describe "Replication" do
 				:size => "hello".size,
 				:opid => 1)
 			@connection2.write("hello")
+			
+			write_json(@connection2,
+				:command => 'add',
+				:group => 'foo',
+				:timestamp => 24 * 60 * 60,
+				:size => "world".size,
+				:opid => 2)
+			@connection2.write("world")
 			
 			write_json(@connection2,
 				:command => 'remove',
@@ -250,6 +263,15 @@ describe "Replication" do
 				'size' => @header_size + "hello".size
 			}
 			@connection.read(@header_size + "hello".size).should =~ /hello/
+			write_json(:status => 'ok')
+			
+			read_json.should == {
+				'command' => 'addRaw',
+				'group' => 'foo',
+				'dayTimestamp' => 1,
+				'size' => @header_size + "world".size
+			}
+			@connection.read(@header_size + "world".size).should =~ /world/
 			write_json(:status => 'ok')
 			
 			read_json.should == {
