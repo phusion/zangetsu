@@ -294,14 +294,18 @@ describe "Database" do
 			output, error = eval_js!(@add_code)
 			contents = File.read(@dbpath + "/foo/123/data")
 			contents.should ==
-				# Header
+				# Header magic
 				"ET" +
 				# Length
 				["hello world".size].pack('N') +
+				# Data
+				"hello world" +
 				# Checksum
 				"\x00\x00\x0d\x4a" +
-				# Data
-				"hello world"
+				# Length
+				["hello world".size].pack('N') +
+				# Footer magic
+				"TE"
 			output.should == "Added at 0\n"
 		end
 	end
@@ -344,7 +348,7 @@ describe "Database" do
 		it "works" do
 			eval_js!(@add_code)
 			output = eval_js!(@add_code).first
-			offset = 2 + 4 + 4 + 'hello world'.size
+			offset = 2 + 4 + 'hello world'.size + 4 + 4 + 2
 			output.should include("Added at #{offset}\n")
 			
 			output, error = run_get_function('foo', 123, offset)

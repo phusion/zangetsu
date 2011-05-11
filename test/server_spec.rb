@@ -6,8 +6,11 @@ describe "Server" do
 		output, error = eval_js!(%Q{
 			var TimeEntry = require('zangetsu/time_entry.js');
 			console.log(TimeEntry.HEADER_SIZE);
+			console.log(TimeEntry.FOOTER_SIZE);
 		})
-		@header_size = output.to_i
+		@header_size, @footer_size = output.split("\n")
+		@header_size = @header_size.to_i
+		@footer_size = @footer_size.to_i
 	end
 	
 	before :each do
@@ -72,7 +75,8 @@ describe "Server" do
 				File.exist?("#{@dbpath}/foo/2/data")
 			end
 			eventually do
-				File.stat("#{@dbpath}/foo/2/data").size == @header_size + "hello world".size
+				File.stat("#{@dbpath}/foo/2/data").size ==
+					@header_size + "hello world".size + @footer_size
 			end
 		end
 		
@@ -103,15 +107,15 @@ describe "Server" do
 					},
 					"2" => {
 						"status" => "ok",
-						"offset" => @header_size + "hello".size
+						"offset" => @header_size + "hello".size + @footer_size
 					}
 				},
 				"status" => "ok"
 			}
 			
 			File.stat("#{@dbpath}/foo/2/data").size.should ==
-				@header_size + "hello".size +
-				@header_size + "world!".size
+				@header_size + "hello".size + @footer_size +
+				@header_size + "world!".size + @footer_size
 		end
 		
 		it "complains if an opid is given for which the result isn't yet fetched" do
@@ -197,7 +201,7 @@ describe "Server" do
 				"results" => {
 					"1" => {
 						"status" => "ok",
-						"offset" => @header_size + "hello".size
+						"offset" => @header_size + "hello".size + @footer_size
 					}
 				},
 				"status" => "ok"

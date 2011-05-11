@@ -6,8 +6,11 @@ describe "Replication" do
 		output, error = eval_js!(%Q{
 			var TimeEntry = require('zangetsu/time_entry.js');
 			console.log(TimeEntry.HEADER_SIZE);
+			console.log(TimeEntry.FOOTER_SIZE);
 		})
-		@header_size = output.to_i
+		@header_size, @footer_size = output.split("\n")
+		@header_size = @header_size.to_i
+		@footer_size = @footer_size.to_i
 	end
 	
 	before :each do
@@ -260,18 +263,18 @@ describe "Replication" do
 				'command' => 'addRaw',
 				'group' => 'foo',
 				'dayTimestamp' => 2,
-				'size' => @header_size + "hello".size
+				'size' => @header_size + "hello".size + @footer_size
 			}
-			@connection.read(@header_size + "hello".size).should =~ /hello/
+			@connection.read(@header_size + "hello".size + @footer_size).should =~ /hello/
 			write_json(:status => 'ok')
 			
 			read_json.should == {
 				'command' => 'addRaw',
 				'group' => 'foo',
 				'dayTimestamp' => 1,
-				'size' => @header_size + "world".size
+				'size' => @header_size + "world".size + @footer_size
 			}
-			@connection.read(@header_size + "world".size).should =~ /world/
+			@connection.read(@header_size + "world".size + @footer_size).should =~ /world/
 			write_json(:status => 'ok')
 			
 			read_json.should == {
