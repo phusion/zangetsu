@@ -3,6 +3,7 @@
 #include <node.h>
 #include <cstdio>
 #include <cerrno>
+#include <ctime>
 #include <fcntl.h>
 
 #include <config.h>
@@ -19,6 +20,7 @@ struct FunctionCallData {
 
 static int
 eioFunctionCallDone(eio_req *req) {
+	if (req == NULL) return 0;
 	HandleScope scope;
 	
 	FunctionCallData *data = (FunctionCallData *) req->data;
@@ -62,6 +64,7 @@ flushStdio(const Arguments &args) {
 }
 
 
+#ifdef HAVE_POSIX_FADVISE
 struct PosixFadviseData: public FunctionCallData {
 	int   fd;
 	int   advise;
@@ -71,12 +74,8 @@ struct PosixFadviseData: public FunctionCallData {
 
 static int
 posixFadviseWrapper(eio_req *req) {
-	#ifdef HAVE_POSIX_FADVISE
-		req->result = posix_fadvise(data.fd, data.offset, data.len, data.advise);
-	#else
-		req->result = -1;
-		errno = ENOSYS;
-	#endif
+	PosixFadviseData *data = (PosixFadviseData *) req->data;
+	req->result = posix_fadvise(data.fd, data.offset, data.len, data.advise);
 	return 0;
 }
 
@@ -104,23 +103,20 @@ posixFadvise(const Arguments &args) {
 		ev_ref(EV_DEFAULT_UC);
 		return Undefined();
 	} else {
-		#ifdef HAVE_POSIX_FADVISE
-			int ret = posix_fadvise(data->fd, data->offset, data->len, data->advise);
-			int e = errno;
-			delete data;
-			if (ret == -1) {
-				return ThrowException(ErrnoException(errno));
-			} else {
-				return Undefined();
-			}
-		#else
-			delete data;
-			return ThrowException(ErrnoException(ENOSYS));
-		#endif
+		int ret = posix_fadvise(data->fd, data->offset, data->len, data->advise);
+		int e = errno;
+		delete data;
+		if (ret == -1) {
+			return ThrowException(ErrnoException(errno));
+		} else {
+			return Undefined();
+		}
 	}
 }
+#endif
 
 
+#ifdef HAVE_POSIX_FALLOCATE
 struct PosixFallocateData: public FunctionCallData {
 	int   fd;
 	off_t offset;
@@ -129,12 +125,8 @@ struct PosixFallocateData: public FunctionCallData {
 
 static int
 posixFallocateWrapper(eio_req *req) {
-	#ifdef HAVE_POSIX_FALLOCATE
-		req->result = posix_fallocate(data.fd, data.offset, data.len);
-	#else
-		req->result = -1;
-		errno = ENOSYS;
-	#endif
+	PosixFallocateData *data = (PosixFallocateData *) req->data;
+	req->result = posix_fallocate(data.fd, data.offset, data.len);
 	return 0;
 }
 
@@ -160,40 +152,31 @@ posixFallocate(const Arguments &args) {
 		ev_ref(EV_DEFAULT_UC);
 		return Undefined();
 	} else {
-		#ifdef HAVE_POSIX_FALLOCATE
-			int ret = posix_fallocate(data->fd, data->offset, data->len);
-			int e = errno;
-			delete data;
-			if (ret == -1) {
-				return ThrowException(ErrnoException(errno));
-			} else {
-				return Undefined();
-			}
-		#else
-			delete data;
-			return ThrowException(ErrnoException(ENOSYS));
-		#endif
+		int ret = posix_fallocate(data->fd, data->offset, data->len);
+		int e = errno;
+		delete data;
+		if (ret == -1) {
+			return ThrowException(ErrnoException(errno));
+		} else {
+			return Undefined();
+		}
 	}
 }
+#endif
 
 
+#ifdef HAVE_SYNC_FILE_RANGE
 struct SyncFileRangeData: public FunctionCallData {
-	#ifdef HAVE_SYNC_FILE_RANGE
 	int     fd;
 	off64_t offset;
 	off64_t nbytes;
 	unsigned int flags;
-	#endif
 };
 
 static int
 syncFileRangeWrapper(eio_req *req) {
-	#ifdef HAVE_SYNC_FILE_RANGE
-		req->result = sync_file_range(data.fd, data.offset, data.nbytes, data.flags);
-	#else
-		req->result = -1;
-		errno = ENOSYS;
-	#endif
+	SyncFileRangeData *data = (SyncFileRangeData *) req->data;
+	req->result = sync_file_range(data.fd, data.offset, data.nbytes, data.flags);
 	return 0;
 }
 
@@ -209,35 +192,29 @@ syncFileRange(const Arguments &args) {
 		return ThrowException(Exception::TypeError(String::New("Bad argument")));
 	}
 	
-	#ifdef HAVE_SYNC_FILE_RANGE
 	data->fd     = args[0]->Int32Value();
 	data->offset = (off64_t) args[1]->Int32Value();
 	data->nbytes = (off64_t) args[2]->Int32Value();
 	data->flags  = args[3]->Int32Value();
-	#endif
 	
-	if (args[3]->IsFunction()) {
-		data->callback = cb_persist(args[3]);
+	if (args[4]->IsFunction()) {
+		data->callback = cb_persist(args[4]);
 		req = eio_custom(syncFileRangeWrapper, EIO_PRI_DEFAULT, eioFunctionCallDone, data);
 		assert(req);
 		ev_ref(EV_DEFAULT_UC);
 		return Undefined();
 	} else {
-		#ifdef HAVE_SYNC_FILE_RANGE
-			int ret = sync_file_range(data->fd, data->offset, data->nbytes, data->len);
-			int e = errno;
-			delete data;
-			if (ret == -1) {
-				return ThrowException(ErrnoException(errno));
-			} else {
-				return Undefined();
-			}
-		#else
-			delete data;
-			return ThrowException(ErrnoException(ENOSYS));
-		#endif
+		int ret = sync_file_range(data->fd, data->offset, data->nbytes, data->len);
+		int e = errno;
+		delete data;
+		if (ret == -1) {
+			return ThrowException(ErrnoException(errno));
+		} else {
+			return Undefined();
+		}
 	}
 }
+#endif
 
 
 extern "C" void
@@ -248,9 +225,11 @@ init(Handle<Object> target) {
 	target->Set(String::NewSymbol("flushStdio"),
 		FunctionTemplate::New(flushStdio)->GetFunction());
 	
-	target->Set(String::NewSymbol("posix_fadvise"),
-		FunctionTemplate::New(posixFadvise)->GetFunction());
+	eioFunctionCallDone(NULL); // Shut up compiler warning.
+	
 	#ifdef HAVE_POSIX_FADVISE
+		target->Set(String::NewSymbol("posix_fadvise"),
+			FunctionTemplate::New(posixFadvise)->GetFunction());
 		target->Set(String::NewSymbol("POSIX_FADV_NORMAL"),
 			Integer::New(POSIX_FADV_NORMAL));
 		target->Set(String::NewSymbol("POSIX_FADV_SEQUENTIAL"),
@@ -263,27 +242,21 @@ init(Handle<Object> target) {
 			Integer::New(POSIX_FADV_DONTNEED));
 		target->Set(String::NewSymbol("POSIX_FADV_NOREUSE"),
 			Integer::New(POSIX_FADV_NOREUSE));
-		target->Set(String::NewSymbol("hasPosixFadvise"),
-			Boolean::New(true));
 	#endif
 	
-	target->Set(String::NewSymbol("posix_fallocate"),
-		FunctionTemplate::New(posixFallocate)->GetFunction());
 	#ifdef HAVE_POSIX_FALLOCATE
-		target->Set(String::NewSymbol("hasPosixFallocate"),
-			Boolean::New(true));
+		target->Set(String::NewSymbol("posix_fallocate"),
+			FunctionTemplate::New(posixFallocate)->GetFunction());
 	#endif
 	
-	target->Set(String::NewSymbol("sync_file_range"),
-		FunctionTemplate::New(syncFileRange)->GetFunction());
 	#ifdef HAVE_SYNC_FILE_RANGE
+		target->Set(String::NewSymbol("sync_file_range"),
+			FunctionTemplate::New(syncFileRange)->GetFunction());
 		target->Set(String::NewSymbol("SYNC_FILE_RANGE_WAIT_BEFORE"),
 			Integer::New(SYNC_FILE_RANGE_WAIT_BEFORE));
 		target->Set(String::NewSymbol("SYNC_FILE_RANGE_WRITE"),
 			Integer::New(SYNC_FILE_RANGE_WRITE));
 		target->Set(String::NewSymbol("SYNC_FILE_RANGE_WAIT_AFTER"),
 			Integer::New(SYNC_FILE_RANGE_WAIT_AFTER));
-		target->Set(String::NewSymbol("hasSyncFileRange"),
-			Boolean::New(true));
 	#endif
 }
