@@ -9,8 +9,11 @@ def set_options(opt):
 def configure(conf):
 	conf.check_tool('compiler_cxx')
 	conf.check_tool('node_addon')
+	conf.define('GNU_SOURCE', 1)
 	conf.check_cxx(function_name = 'posix_fadvise', header_name = "fcntl.h", mandatory = False)
 	conf.check_cxx(function_name = 'posix_fallocate', header_name = "fcntl.h", mandatory = False)
+	conf.check_cxx(function_name = 'sync_file_range', header_name = "fcntl.h", mandatory = False,
+		defines = ['_GNU_SOURCE'])
 	conf.write_config_header('config.h')
 
 def build(bld):

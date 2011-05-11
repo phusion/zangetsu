@@ -177,6 +177,69 @@ posixFallocate(const Arguments &args) {
 }
 
 
+struct SyncFileRangeData: public FunctionCallData {
+	#ifdef HAVE_SYNC_FILE_RANGE
+	int     fd;
+	off64_t offset;
+	off64_t nbytes;
+	unsigned int flags;
+	#endif
+};
+
+static int
+syncFileRangeWrapper(eio_req *req) {
+	#ifdef HAVE_SYNC_FILE_RANGE
+		req->result = sync_file_range(data.fd, data.offset, data.nbytes, data.flags);
+	#else
+		req->result = -1;
+		errno = ENOSYS;
+	#endif
+	return 0;
+}
+
+// fd, offset, nbytes, flags, callback
+static Handle<Value>
+syncFileRange(const Arguments &args) {
+	HandleScope scope;
+	SyncFileRangeData *data = new SyncFileRangeData();
+	eio_req *req;
+	
+	if (args.Length() < 4 || !args[0]->IsInt32() || !args[1]->IsInt32() || !args[2]->IsInt32()
+	 || !args[3]->IsInt32()) {
+		return ThrowException(Exception::TypeError(String::New("Bad argument")));
+	}
+	
+	#ifdef HAVE_SYNC_FILE_RANGE
+	data->fd     = args[0]->Int32Value();
+	data->offset = (off64_t) args[1]->Int32Value();
+	data->nbytes = (off64_t) args[2]->Int32Value();
+	data->flags  = args[3]->Int32Value();
+	#endif
+	
+	if (args[3]->IsFunction()) {
+		data->callback = cb_persist(args[3]);
+		req = eio_custom(syncFileRangeWrapper, EIO_PRI_DEFAULT, eioFunctionCallDone, data);
+		assert(req);
+		ev_ref(EV_DEFAULT_UC);
+		return Undefined();
+	} else {
+		#ifdef HAVE_SYNC_FILE_RANGE
+			int ret = sync_file_range(data->fd, data->offset, data->nbytes, data->len);
+			int e = errno;
+			delete data;
+			if (ret == -1) {
+				return ThrowException(ErrnoException(errno));
+			} else {
+				return Undefined();
+			}
+		#else
+			delete data;
+			return ThrowException(ErrnoException(ENOSYS));
+		#endif
+	}
+}
+
+
 extern "C" void
 init(Handle<Object> target) {
 	HandleScope scope;
@@ -208,6 +271,19 @@ init(Handle<Object> target) {
 		FunctionTemplate::New(posixFallocate)->GetFunction());
 	#ifdef HAVE_POSIX_FALLOCATE
 		target->Set(String::NewSymbol("hasPosixFallocate"),
+			Boolean::New(true));
+	#endif
+	
+	target->Set(String::NewSymbol("sync_file_range"),
+		FunctionTemplate::New(syncFileRange)->GetFunction());
+	#ifdef HAVE_SYNC_FILE_RANGE
+		target->Set(String::NewSymbol("SYNC_FILE_RANGE_WAIT_BEFORE"),
+			Integer::New(SYNC_FILE_RANGE_WAIT_BEFORE));
+		target->Set(String::NewSymbol("SYNC_FILE_RANGE_WRITE"),
+			Integer::New(SYNC_FILE_RANGE_WRITE));
+		target->Set(String::NewSymbol("SYNC_FILE_RANGE_WAIT_AFTER"),
+			Integer::New(SYNC_FILE_RANGE_WAIT_AFTER));
+		target->Set(String::NewSymbol("hasSyncFileRange"),
 			Boolean::New(true));
 	#endif
 }
