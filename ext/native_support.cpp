@@ -1,3 +1,4 @@
+#include <config.h>
 #include <v8.h>
 #include <eio.h>
 #include <node.h>
@@ -5,8 +6,6 @@
 #include <cerrno>
 #include <ctime>
 #include <fcntl.h>
-
-#include <config.h>
 
 using namespace v8;
 using namespace node;
@@ -20,7 +19,6 @@ struct FunctionCallData {
 
 static int
 eioFunctionCallDone(eio_req *req) {
-	if (req == NULL) return 0;
 	HandleScope scope;
 	
 	FunctionCallData *data = (FunctionCallData *) req->data;
@@ -64,6 +62,68 @@ flushStdio(const Arguments &args) {
 }
 
 
+struct FDataSyncData: public FunctionCallData {
+	int fd;
+};
+
+static int
+fDataSyncWrapper(eio_req *req) {
+	FDataSyncData *data = (FDataSyncData *) req->data;
+	#if defined(HAVE_FDATASYNC) && HAVE_DATASYNC == 1
+		req->result = fdatasync(data->fd);
+	#else
+		req->result = fsync(data->fd);
+		#ifdef F_FULLFSYNC
+			if (req->result == 0) {
+				req->result = fcntl(data->fd, F_FULLFSYNC);
+			}
+		#endif
+	#endif
+	return 0;
+}
+
+// fd, callback
+static Handle<Value>
+fDataSync(const Arguments &args) {
+	HandleScope scope;
+	FDataSyncData *data = new FDataSyncData();
+	eio_req *req;
+	
+	if (args.Length() < 1 || !args[0]->IsInt32()) {
+		return ThrowException(Exception::TypeError(String::New("Bad argument")));
+	}
+	
+	data->fd = args[0]->Int32Value();
+	
+	if (args[1]->IsFunction()) {
+		data->callback = cb_persist(args[1]);
+		req = eio_custom(fDataSyncWrapper, EIO_PRI_DEFAULT, eioFunctionCallDone, data);
+		assert(req);
+		ev_ref(EV_DEFAULT_UC);
+		return Undefined();
+	} else {
+		int ret;
+		#if defined(HAVE_FDATASYNC) && HAVE_DATASYNC == 1
+			ret = fdatasync(data->fd);
+		#else
+			ret = fsync(data->fd);
+			#ifdef F_FULLFSYNC
+				if (ret == 0) {
+					ret = fcntl(data->fd, F_FULLFSYNC);
+				}
+			#endif
+		#endif
+		int e = errno;
+		delete data;
+		if (ret == -1) {
+			return ThrowException(ErrnoException(errno));
+		} else {
+			return Undefined();
+		}
+	}
+}
+
+
 #ifdef HAVE_POSIX_FADVISE
 struct PosixFadviseData: public FunctionCallData {
 	int   fd;
@@ -75,7 +135,7 @@ struct PosixFadviseData: public FunctionCallData {
 static int
 posixFadviseWrapper(eio_req *req) {
 	PosixFadviseData *data = (PosixFadviseData *) req->data;
-	req->result = posix_fadvise(data.fd, data.offset, data.len, data.advise);
+	req->result = posix_fadvise(data->fd, data->offset, data->len, data->advise);
 	return 0;
 }
 
@@ -225,7 +285,8 @@ init(Handle<Object> target) {
 	target->Set(String::NewSymbol("flushStdio"),
 		FunctionTemplate::New(flushStdio)->GetFunction());
 	
-	eioFunctionCallDone(NULL); // Shut up compiler warning.
+	target->Set(String::NewSymbol("fdatasync"),
+		FunctionTemplate::New(fDataSync)->GetFunction());
 	
 	#ifdef HAVE_POSIX_FADVISE
 		target->Set(String::NewSymbol("posix_fadvise"),
