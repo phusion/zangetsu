@@ -4,14 +4,37 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 describe "Database" do
 	before :each do
 		@dbpath = 'tmp/db'
+		@header = %Q{
+			var sys      = require('sys');
+			var Database = require('zangetsu/database');
+			var database = new Database.Database('#{@dbpath}');
+			var CRC32    = require('zangetsu/crc32.js');
+			
+			function add(groupName, dayTimestamp, strOrBuffers, callback) {
+				var buffers;
+				if (typeof(strOrBuffers) == 'string') {
+					buffers  = [new Buffer(strOrBuffers)];
+				} else {
+					buffers = strOrBuffers;
+				}
+				var checksum = CRC32.toBuffer(buffers);
+				database.add(groupName, dayTimestamp, buffers, checksum,
+					function(err, offset, size, buffers)
+				{
+					if (err) {
+						console.log(err);
+						process.exit(1);
+					} else if (callback) {
+						callback(offset, size, buffers);
+					}
+				});
+			}
+		}
 	end
 	
 	describe ".reload" do
 		before :each do
-			@code = %q{
-				var sys = require('sys');
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+			@code = @header + %q{
 				database.reload();
 				sys.print(database.groupCount, " groups\n");
 				var groupName, group, timeEntryName, timeEntry;
@@ -117,9 +140,8 @@ describe "Database" do
 	describe ".findOrCreateGroup" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
-			@find_or_create_foo_after_reload = %q{
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+			@find_or_create_foo_after_reload = %Q{
+				#{@header}
 				database.reload();
 				try {
 					database.findOrCreateGroup('foo');
@@ -154,10 +176,9 @@ describe "Database" do
 		end
 		
 		it "returns the given group if mkdir fails with EEXIST" do
-			output, error = eval_js!(%q{
+			output, error = eval_js!(%Q{
+				#{@header}
 				var fs = require('fs');
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
 				fs.mkdirSync('tmp/db/foo', 0700);
 				database.findOrCreateGroup('foo');
 				console.log("Created");
@@ -167,10 +188,7 @@ describe "Database" do
 		end
 		
 		it "works if invoked multiple times without waiting for the callback" do
-			output, error = eval_js!(%q{
-				var sys = require('sys');
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+			output, error = eval_js!(@header + %q{
 				database.reload();
 				database.findOrCreateGroup('foo');
 				sys.print("Created\n");
@@ -187,9 +205,8 @@ describe "Database" do
 	describe ".findOrCreateTimeEntry" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
-			@code = %q{
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+			@code = %Q{
+				#{@header}
 				database.reload();
 				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
 				console.log("Created: size =", timeEntry.size);
@@ -215,9 +232,8 @@ describe "Database" do
 			File.open(@dbpath + "/foo/123/data", "w") do |f|
 				f.write("abc")
 			end
-			output, error = eval_js!(%q{
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+			output, error = eval_js!(%Q{
+				#{@header}
 				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
 				console.log("Created: size =", timeEntry.dataFileSize);
 			})
@@ -228,9 +244,8 @@ describe "Database" do
 	describe ".findTimeEntry" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
-			@code = %q{
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+			@code = %Q{
+				#{@header}
 				database.reload();
 				var timeEntry = database.findTimeEntry('foo', 123);
 				if (timeEntry) {
@@ -273,25 +288,17 @@ describe "Database" do
 	describe ".add" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
-			@add_code = %Q{
-				var Database = require('zangetsu/database.js').Database;
-				var CRC32    = require('zangetsu/crc32.js');
-				var database = new Database("tmp/db");
-				var buffers  = [new Buffer("hello "), new Buffer("world")];
-				var checksum = CRC32.toBuffer(buffers);
-				database.reload();
-				database.add("foo", 123, buffers, checksum, function(err, offset) {
-					if (err) {
-						console.log(err);
-						process.exit(1);
-					}
-					console.log("Added at", offset);
-				});
-			}
 		end
 		
-		it "works" do
-			output, error = eval_js!(@add_code)
+		it "writes the correct data to the filesystem" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				add("foo", 123, [new Buffer("hello "), new Buffer("world")],
+					function(offset, size, buffers)
+				{
+					console.log("Added at", offset);
+				});
+			})
 			contents = File.read(@dbpath + "/foo/123/data")
 			contents.should ==
 				# Header magic
@@ -308,23 +315,58 @@ describe "Database" do
 				"TEaZ"
 			output.should == "Added at 0\n"
 		end
+		
+		it "updates various internal statistics" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				add("foo", 123, [new Buffer("hello "), new Buffer("world")],
+					function(offset, size, buffers)
+				{
+					console.log("Added at", offset);
+					console.log("WrittenSize",
+						database.findTimeEntry('foo', 123).writtenSize);
+					add("foo", 123, [new Buffer("hello "), new Buffer("world")],
+						function(offset, size, buffers)
+					{
+						console.log("Added at", offset);
+						console.log("DataFileSize",
+							database.findTimeEntry('foo', 123).dataFileSize);
+						console.log("WrittenSize",
+							database.findTimeEntry('foo', 123).writtenSize);
+					});
+					console.log("DataFileSize",
+						database.findTimeEntry('foo', 123).dataFileSize);
+					console.log("WrittenSize",
+						database.findTimeEntry('foo', 123).writtenSize);
+				});
+				console.log("DataFileSize",
+					database.findTimeEntry('foo', 123).dataFileSize);
+				console.log("WrittenSize",
+					database.findTimeEntry('foo', 123).writtenSize);
+			})
+			output.should ==
+				"DataFileSize 31\n" +
+				"WrittenSize 0\n" +
+				
+				"Added at 0\n" +
+				"WrittenSize 31\n" +
+				"DataFileSize 62\n" +
+				"WrittenSize 31\n" +
+				
+				"Added at 31\n" +
+				"DataFileSize 62\n" +
+				"WrittenSize 62\n"
+		end
 	end
 	
 	describe ".get" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@add_code = %Q{
-				var Database = require('zangetsu/database.js').Database;
-				var CRC32    = require('zangetsu/crc32.js');
-				var database = new Database("tmp/db");
+				#{@header}
 				var buffers  = [new Buffer("hello "), new Buffer("world")];
-				var checksum = CRC32.toBuffer(buffers);
 				database.reload();
-				database.add("foo", 123, buffers, checksum, function(err, offset) {
-					if (err) {
-						console.log(err);
-						process.exit(1);
-					}
+				add("foo", 123, buffers, function(offset) {
 					console.log("Added at", offset);
 				});
 			}
@@ -332,8 +374,7 @@ describe "Database" do
 		
 		def run_get_function(group, day_timestamp, offset)
 			return eval_js!(%Q{
-				var Database = require('zangetsu/database').Database;
-				var database = new Database("tmp/db");
+				#{@header}
 				database.reload();
 				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, data) {
 					if (err) {
@@ -382,9 +423,8 @@ describe "Database" do
 		end
 		
 		it "supports deleting an entire group" do
-			output, error = eval_js!(%q{
-				var Database = require('zangetsu/database.js').Database;
-				var database = new Database("tmp/db");
+			output, error = eval_js!(%Q{
+				#{@header}
 				database.reload();
 				database.remove("foo", undefined, function() {
 					console.log("Removed");
@@ -397,9 +437,8 @@ describe "Database" do
 		end
 		
 		it "can also delete all time entries older than the given timestamp inside a group" do
-			output, error = eval_js!(%q{
-				var Database = require('zangetsu/database.js').Database;
-				var database = new Database("tmp/db");
+			output, error = eval_js!(%Q{
+				#{@header}
 				database.reload();
 				database.remove("foo", 125, function() {
 					console.log("Removed");
@@ -411,6 +450,93 @@ describe "Database" do
 			File.exist?(@dbpath + "/foo/125").should be_true
 			File.exist?(@dbpath + "/bar").should be_true
 			dircount(@dbpath + "/foo").should == 1
+		end
+	end
+	
+	describe ".each" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath)
+			
+		end
+		
+		it "iterates through all entries" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				
+				var counter = 4;
+				function added() {
+					counter--;
+					if (counter == 0) {
+						startTest();
+					}
+				}
+				
+				function startTest() {
+					database.findTimeEntry('foo', 1).each(0,
+						function(err, buf, continueReading, stop)
+					{
+						if (err) {
+							console.log(err);
+							process.exit(1);
+						}
+						if (buf.length > 0) {
+							console.log("Entry:", buf.toString('ascii'));
+							continueReading();
+						} else {
+							console.log("EOF");
+						}
+					});
+				}
+				
+				add('foo', 1, 'hello', added);
+				add('foo', 1, 'world', added);
+				add('foo', 1, 'another entry', added);
+				add('foo', 2, 'test', added);
+				add('bar', 2, 'some text', added);
+			})
+			output.should ==
+				"Entry: hello\n" +
+				"Entry: world\n" +
+				"Entry: another entry\n" +
+				"EOF\n"
+		end
+		
+		it "aborts with an error if an invalid offset is given" do
+			status, output, error = eval_js(%Q{
+				#{@header}
+				
+				var counter = 3;
+				function added() {
+					counter--;
+					if (counter == 0) {
+						startTest();
+					}
+				}
+				
+				function startTest() {
+					database.findTimeEntry('foo', 1).each(1,
+						function(err, buf, continueReading, stop)
+					{
+						if (err) {
+							console.log(err);
+							process.exit(1);
+						}
+						if (buf.length > 0) {
+							console.log("Entry:", buf.toString('ascii'));
+							continueReading();
+						} else {
+							console.log("EOF");
+						}
+					});
+				}
+				
+				add('foo', 1, 'hello', added);
+				add('foo', 1, 'world', added);
+				add('foo', 1, 'another entry', added);
+			})
+			status.should == 1
+			output.should == "not-found\n"
+			error.should be_empty
 		end
 	end
 end

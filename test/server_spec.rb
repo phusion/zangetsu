@@ -22,7 +22,7 @@ describe "Server" do
 		@code = %Q{
 			var Server = require('zangetsu/server').Server;
 			var server = new Server("tmp/db");
-			server.listenFD(#{@server_socket.fileno});
+			server.startAsMasterWithFD(#{@server_socket.fileno});
 		}
 		@server = async_eval_js(@code, :capture => true)
 		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)

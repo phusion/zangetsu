@@ -5,7 +5,8 @@ require 'fcntl'
 require 'timeout'
 require 'json'
 
-TEST_SERVER_PORT = 3765
+TEST_SERVER_PORT  = 3765
+TEST_SERVER_PORT2 = 3766
 DEBUG = ['1', 'yes', 'y', 'true'].include?(ENV['DEBUG'])
 
 module SpecHelper
