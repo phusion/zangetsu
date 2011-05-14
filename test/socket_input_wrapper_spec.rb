@@ -12,6 +12,7 @@ describe "SocketInputWrapper" do
 			function DummySocket() {
 				events.EventEmitter.call(this);
 				this.paused = false;
+				this.fd = 999;
 			}
 			util.inherits(DummySocket, events.EventEmitter);
 			
@@ -21,6 +22,11 @@ describe "SocketInputWrapper" do
 			
 			DummySocket.prototype.resume = function() {
 				this.paused = false;
+			}
+			
+			DummySocket.prototype.destroy = function() {
+				this.fd = null;
+				this.destroyed = true;
 			}
 			
 			var socket  = new DummySocket();
@@ -259,5 +265,26 @@ describe "SocketInputWrapper" do
 			"Data: bbb\n" +
 			"Data: bb\n" +
 			"Data: b\n"
+	end
+	
+	it "stops emitting unconsumed data once the socket is closed" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			var counter = 0;
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				counter++;
+				if (counter <= 1) {
+					return 2;
+				} else {
+					socket.destroy();
+					return 0;
+				}
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"Data: abbb\n"
 	end
 end
