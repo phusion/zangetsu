@@ -295,7 +295,7 @@ describe "Database" do
 			contents = File.read(@dbpath + "/foo/123/data")
 			contents.should ==
 				# Header magic
-				"ET" +
+				"ZaET" +
 				# Length
 				["hello world".size].pack('N') +
 				# Data
@@ -305,7 +305,7 @@ describe "Database" do
 				# Length
 				["hello world".size].pack('N') +
 				# Footer magic
-				"TE"
+				"TEaZ"
 			output.should == "Added at 0\n"
 		end
 	end
@@ -348,7 +348,7 @@ describe "Database" do
 		it "works" do
 			eval_js!(@add_code)
 			output = eval_js!(@add_code).first
-			offset = 2 + 4 + 'hello world'.size + 4 + 4 + 2
+			offset = 4 + 4 + 'hello world'.size + 4 + 4 + 4
 			output.should include("Added at #{offset}\n")
 			
 			output, error = run_get_function('foo', 123, offset)
