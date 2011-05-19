@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <ctime>
 #include <fcntl.h>
+#include <unistd.h>
 #ifdef HAVE_FALLOCATE
 	#include <linux/falloc.h>
 #endif
@@ -291,7 +292,7 @@ struct SyncFileRangeData: public FunctionCallData {
 static int
 syncFileRangeWrapper(eio_req *req) {
 	SyncFileRangeData *data = (SyncFileRangeData *) req->data;
-	req->result = sync_file_range(data.fd, data.offset, data.nbytes, data.flags);
+	req->result = sync_file_range(data->fd, data->offset, data->nbytes, data->flags);
 	return 0;
 }
 
@@ -319,7 +320,7 @@ syncFileRange(const Arguments &args) {
 		ev_ref(EV_DEFAULT_UC);
 		return Undefined();
 	} else {
-		int ret = sync_file_range(data->fd, data->offset, data->nbytes, data->len);
+		int ret = sync_file_range(data->fd, data->offset, data->nbytes, data->flags);
 		int e = errno;
 		delete data;
 		if (ret == -1) {
