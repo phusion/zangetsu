@@ -6,6 +6,9 @@
 #include <cerrno>
 #include <ctime>
 #include <fcntl.h>
+#ifdef HAVE_FALLOCATE
+	#include <linux/falloc.h>
+#endif
 
 using namespace v8;
 using namespace node;
@@ -225,6 +228,58 @@ posixFallocate(const Arguments &args) {
 #endif
 
 
+#ifdef HAVE_FALLOCATE
+struct FallocateData: public FunctionCallData {
+	int   fd;
+	int   mode;
+	off_t offset;
+	off_t len;
+};
+
+static int
+fallocateWrapper(eio_req *req) {
+	FallocateData *data = (FallocateData *) req->data;
+	req->result = fallocate(data.fd, data.mode, data.offset, data.len);
+	return 0;
+}
+
+// fd, mode, offset, len, callback
+static Handle<Value>
+fAllocate(const Arguments &args) {
+	HandleScope scope;
+	FallocateData *data = new FallocateData();
+	eio_req *req;
+	
+	if (args.Length() < 4 || !args[0]->IsInt32() || !args[1]->IsInt32() || !args[2]->IsInt32()
+	 || !args[3]->IsInt32()) {
+		return ThrowException(Exception::TypeError(String::New("Bad argument")));
+	}
+	
+	data->fd     = args[0]->Int32Value();
+	data->mode   = args[1]->Int32Value();
+	data->offset = (off_t) args[2]->Int32Value();
+	data->len    = (off_t) args[3]->Int32Value();
+	
+	if (args[4]->IsFunction()) {
+		data->callback = cb_persist(args[4]);
+		req = eio_custom(fallocateWrapper, EIO_PRI_DEFAULT, eioFunctionCallDone, data);
+		assert(req);
+		ev_ref(EV_DEFAULT_UC);
+		return Undefined();
+	} else {
+		int ret = fallocate(data->fd, data->mode, data->offset, data->len);
+		int e = errno;
+		delete data;
+		if (ret == -1) {
+			return ThrowException(ErrnoException(errno));
+		} else {
+			return Undefined();
+		}
+	}
+}
+#endif
+
+
 #ifdef HAVE_SYNC_FILE_RANGE
 struct SyncFileRangeData: public FunctionCallData {
 	int     fd;
@@ -308,6 +363,13 @@ init(Handle<Object> target) {
 	#ifdef HAVE_POSIX_FALLOCATE
 		target->Set(String::NewSymbol("posix_fallocate"),
 			FunctionTemplate::New(posixFallocate)->GetFunction());
+	#endif
+	
+	#ifdef HAVE_FALLOCATE
+		target->Set(String::NewSymbol("fallocate"),
+			FunctionTemplate::New(fAllocate)->GetFunction());
+		target->Set(String::NewSymbol("FALLOC_FL_KEEP_SIZE"),
+			Integer::New(FALLOC_FL_KEEP_SIZE));
 	#endif
 	
 	#ifdef HAVE_SYNC_FILE_RANGE
