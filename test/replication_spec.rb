@@ -204,6 +204,8 @@ describe "Replication" do
 				commands.should include('command' => 'add',
 					'group' => 'test', 'dayTimestamp' => 5, 'opid' => 1,
 					'size' => 9, 'data' => 'test data')
+				
+				should_never_happen { socket_readable?(@connection) }
 			end
 			
 			it "doesn't send removal commands if there's nothing to prune" do
