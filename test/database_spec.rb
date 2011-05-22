@@ -137,14 +137,14 @@ describe "Database" do
 		end
 	end
 	
-	describe ".findOrCreateGroup" do
+	describe "._findOrCreateGroup" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@find_or_create_foo_after_reload = %Q{
 				#{@header}
 				database.reload();
 				try {
-					database.findOrCreateGroup('foo');
+					database._findOrCreateGroup('foo');
 					console.log("Created");
 				} catch (err) {
 					console.log("ERROR:", err);
@@ -180,7 +180,7 @@ describe "Database" do
 				#{@header}
 				var fs = require('fs');
 				fs.mkdirSync('tmp/db/foo', 0700);
-				database.findOrCreateGroup('foo');
+				database._findOrCreateGroup('foo');
 				console.log("Created");
 			})
 			File.directory?(@dbpath + "/foo").should be_true
@@ -190,11 +190,11 @@ describe "Database" do
 		it "works if invoked multiple times without waiting for the callback" do
 			output, error = eval_js!(@header + %q{
 				database.reload();
-				database.findOrCreateGroup('foo');
+				database._findOrCreateGroup('foo');
 				sys.print("Created\n");
-				database.findOrCreateGroup('foo');
+				database._findOrCreateGroup('foo');
 				sys.print("Created\n");
-				database.findOrCreateGroup('foo');
+				database._findOrCreateGroup('foo');
 				sys.print("Created\n");
 			})
 			File.directory?(@dbpath + "/foo").should be_true
@@ -202,13 +202,13 @@ describe "Database" do
 		end
 	end
 	
-	describe ".findOrCreateTimeEntry" do
+	describe "._findOrCreateTimeEntry" do
 		before :each do
 			FileUtils.mkdir_p(@dbpath)
 			@code = %Q{
 				#{@header}
 				database.reload();
-				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
+				var timeEntry = database._findOrCreateTimeEntry('foo', 123);
 				console.log("Created: size =", timeEntry.size);
 			}
 		end
@@ -234,7 +234,7 @@ describe "Database" do
 			end
 			output, error = eval_js!(%Q{
 				#{@header}
-				var timeEntry = database.findOrCreateTimeEntry('foo', 123);
+				var timeEntry = database._findOrCreateTimeEntry('foo', 123);
 				console.log("Created: size =", timeEntry.dataFileSize);
 			})
 			output.should include("Created: size = 3\n")
