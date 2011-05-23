@@ -19,13 +19,13 @@ describe "Database" do
 				}
 				var checksum = CRC32.toBuffer(buffers);
 				database.add(groupName, dayTimestamp, buffers, checksum,
-					function(err, offset, size, buffers)
+					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
 						console.log(err);
 						process.exit(1);
 					} else if (callback) {
-						callback(offset, size, buffers);
+						callback(offset, rawSize, buffers);
 					}
 				});
 			}
@@ -473,7 +473,7 @@ describe "Database" do
 				
 				function startTest() {
 					database.findTimeEntry('foo', 1).each(0,
-						function(err, buf, continueReading, stop)
+						function(err, buf, rawSize, continueReading, stop)
 					{
 						if (err) {
 							console.log(err);

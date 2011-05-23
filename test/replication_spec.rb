@@ -30,13 +30,13 @@ describe "Replication" do
 				}
 				var checksum = CRC32.toBuffer(buffers);
 				database.add(groupName, dayTimestamp, buffers, checksum,
-					function(err, offset, size, buffers)
+					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
 						console.log(err);
 						process.exit(1);
 					} else if (callback) {
-						callback(offset, size, buffers);
+						callback(offset, rawSize, buffers);
 					}
 				});
 			}
