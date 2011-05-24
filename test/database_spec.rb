@@ -408,6 +408,37 @@ describe "Database" do
 			output, error = run_get_function('foo', 456, 0)
 			output.should include("Error: not-found\n")
 		end
+		
+		it "returns a not-found error if an invalid offset" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				add('foo', 1, 'hello world', function(offset) {
+					database.get('foo', 1, 1, function(err) {
+						console.log("Error: " + err);
+					});
+				});
+			})
+			output.should == "Error: not-found\n"
+		end
+		
+		it "returns a not-found error if the entry is corrupted" do
+			eval_js!(%Q{
+				#{@header}
+				add('foo', 1, 'hello world')
+			})
+			File.open("#{@dbpath}/foo/1/data", "r+") do |f|
+				f.seek(10, IO::SEEK_SET)
+				f.write("x")
+			end
+			output, error = eval_js!(%Q{
+				#{@header}
+				database.reload();
+				database.get('foo', 1, 0, function(err) {
+					console.log("Error: " + err);
+				});
+			})
+			output.should == "Error: not-found\n"
+		end
 	end
 	
 	describe ".remove" do
