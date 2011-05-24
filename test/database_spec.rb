@@ -539,4 +539,163 @@ describe "Database" do
 			error.should be_empty
 		end
 	end
+	
+	describe "locking" do
+		before :each do
+			FileUtils.mkdir_p(@dbpath)
+			@header << %Q{
+				var assert = require('assert');
+				
+				function afterShortWhile(callback) {
+					setTimeout(callback, 10);
+				}
+			}
+		end
+		
+		it "waits until all database additions are done" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				
+				database.addSleepTime = 20;
+				add('foo', 1, 'hello', function() {
+					console.log("Added");
+				});
+				assert.ok(database.addOperations > 0);
+				
+				setTimeout(function() {
+					database.lock(function() {
+						console.log("Lock done");
+						setTimeout(function() {
+							database.unlock();
+						}, 30);
+					});
+					console.log("Lock called");
+					assert.equal(database.state, Database.LOCKING);
+				}, 10);
+			})
+			output.should ==
+				"Lock called\n" +
+				"Lock done\n" +
+				"Added\n"
+		end
+		
+		it "locks immediately if there are no database additions and no other locks" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				database.lock(function() {
+					console.log("Lock done");
+				});
+				console.log("Lock called");
+			})
+			output.should ==
+				"Lock done\n" +
+				"Lock called\n"
+		end
+		
+		it "prevents any database additions until unlocked" do
+			eval_js!(%Q{
+			#{@header}
+			add('foo', 1, 'hello', function() {
+				var timeEntry = database.findTimeEntry('foo', 1);
+				var dataFileSize = timeEntry.dataFileSize;
+				var writtenSize = timeEntry.writtenSize;
+				
+				database.lock(function() {
+					add('foo', 1, 'world');
+					afterShortWhile(function() {
+						assert.equal(timeEntry.dataFileSize, dataFileSize);
+						assert.equal(timeEntry.writtenSize, writtenSize);
+						database.unlock();
+						
+						afterShortWhile(function() {
+							assert.notEqual(timeEntry.dataFileSize, dataFileSize);
+							assert.notEqual(timeEntry.writtenSize, writtenSize);
+						});
+					});
+				});
+			});
+			})
+		end
+		
+		it "doesn't prevent removals" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				
+				setTimeout(function() {
+					database.remove('foo', undefined, function() {
+						console.log("Removed");
+					});
+				}, 10);
+				
+				database.lock(function() {
+					console.log("Locked");
+					setTimeout(function() {
+						console.log("Unlocking");
+						database.unlock();
+					}, 20);
+				});
+			})
+			output.should ==
+				"Locked\n" +
+				"Removed\n" +
+				"Unlocking\n"
+		end
+		
+		it "ensures only one lock callback is called at a time until unlocked" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				
+				function lockInNextTick(id) {
+					process.nextTick(function() {
+						database.lock(function() {
+							console.log("Lock " + id);
+							setTimeout(function() {
+								console.log("Unlock " + id);
+								database.unlock();
+							}, 10);
+						});
+					});
+				}
+				
+				for (var i = 0; i < 3; i++) {
+					lockInNextTick(i + 1);
+				}
+			})
+			output.should ==
+				"Lock 1\n" +
+				"Unlock 1\n" +
+				"Lock 2\n" +
+				"Unlock 2\n" +
+				"Lock 3\n" +
+				"Unlock 3\n"
+		end
+		
+		it "resumes all database additions after unlock" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				
+				var counter = 0;
+				function added() {
+					console.log("Added " + counter);
+					counter++;
+				}
+				
+				database.lock(function() {
+					add('foo', 1, 'hello', added);
+					add('foo', 1, 'hello', added);
+					add('foo', 1, 'hello', added);
+					
+					setTimeout(function() {
+						console.log("Unlock");
+						database.unlock();
+					}, 10);
+				});
+			})
+			output.should ==
+				"Unlock\n" +
+				"Added 0\n" +
+				"Added 1\n" +
+				"Added 2\n"
+		end
+	end
 end
