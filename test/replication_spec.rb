@@ -103,6 +103,7 @@ describe "Replication" do
 					add('baz', 6, 'xxx');
 					
 					add('test', 5, 'test data');
+					add('test', 5, 'more test data');
 				})
 				FileUtils.mkdir_p("#{@dbpath}/test/3")
 				FileUtils.mkdir_p("#{@dbpath}/test/4")
@@ -172,7 +173,7 @@ describe "Replication" do
 				# and time entries that are larger on the slave than on the master,
 				# and to fill time entries that are smaller than on the master.
 				commands = []
-				9.times do
+				10.times do
 					command = read_json
 					if command['command'] == 'add'
 						command['data'] = @connection.read(command['size'])
@@ -204,6 +205,9 @@ describe "Replication" do
 				commands.should include('command' => 'add',
 					'group' => 'test', 'dayTimestamp' => 5, 'opid' => 1,
 					'size' => 9, 'data' => 'test data')
+				commands.should include('command' => 'add',
+					'group' => 'test', 'dayTimestamp' => 5, 'opid' => 1,
+					'size' => 14, 'data' => 'more test data')
 				
 				read_json.should == { 'command' => 'ping' }
 				write_json(:status => 'ok')
