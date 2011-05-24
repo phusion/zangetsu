@@ -205,6 +205,9 @@ describe "Replication" do
 					'group' => 'test', 'dayTimestamp' => 5, 'opid' => 1,
 					'size' => 9, 'data' => 'test data')
 				
+				read_json.should == { 'command' => 'ping' }
+				write_json(:status => 'ok')
+				
 				should_never_happen { socket_readable?(@connection) }
 			end
 			
@@ -234,6 +237,8 @@ describe "Replication" do
 					f.write("xxxxx")
 				end
 				start_master
+				
+				# Replica member joins master
 				handshake
 				read_json.should == { 'command' => 'getToc' }
 				write_json({
@@ -243,10 +248,14 @@ describe "Replication" do
 						}
 					}
 				})
+				read_json.should == { 'command' => 'ping' }
+				write_json(:status => 'ok')
 				
+				# Regular client connects to master
 				@connection2 = connect_to_server
 				handshake(@connection2, {})
 				
+				# Adds to foo/2
 				write_json(@connection2,
 					:command => 'add',
 					:group => 'foo',
@@ -255,6 +264,7 @@ describe "Replication" do
 					:opid => 1)
 				@connection2.write("hello")
 				
+				# Adds to foo/1
 				write_json(@connection2,
 					:command => 'add',
 					:group => 'foo',
@@ -263,14 +273,26 @@ describe "Replication" do
 					:opid => 2)
 				@connection2.write("world")
 				
+				# Adds to foo/3
+				write_json(@connection2,
+					:command => 'add',
+					:group => 'foo',
+					:timestamp => 72 * 60 * 60,
+					:size => "xxx".size,
+					:opid => 3)
+				@connection2.write("xxx")
+				
+				# Removes foo/1 and foo/2
 				write_json(@connection2,
 					:command => 'remove',
 					:group => 'foo',
-					:timestamp => 96 * 60 * 60)
+					:timestamp => 72 * 60 * 60)
 				read_json(@connection2)['status'].should == 'ok'
 				
 				write_json(@connection2, :command => 'results')
 				read_json(@connection2)['status'].should == 'ok'
+				
+				# We expect all commands to be replicated in the same order
 				
 				read_json.should == {
 					'command' => 'add',
@@ -293,11 +315,30 @@ describe "Replication" do
 				write_json(:status => 'ok')
 				
 				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'dayTimestamp' => 3,
+					'size' => "xxx".size
+				}
+				@connection.read("xxx".size).should == "xxx"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+				
+				read_json.should == {
 					'command' => 'removeOne',
 					'group' => 'foo',
 					'dayTimestamp' => 2
 				}
 				write_json(:status => 'ok')
+				
+				read_json.should == {
+					'command' => 'removeOne',
+					'group' => 'foo',
+					'dayTimestamp' => 1
+				}
+				write_json(:status => 'ok')
+				
+				should_never_happen { socket_readable?(@connection) }
 			end
 			
 			specify "it refills a time entry if filling fails because the slave time entry size is incorrect"
