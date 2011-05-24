@@ -1,7 +1,7 @@
 Authors' notes:
 
-OptapDB itself is licensed under AGPL 3. Programs that connect to
-OptapDB and make use of its services are not considered derived works
+Zangetsu itself is licensed under AGPL 3. Programs that connect to
+Zangetsu and make use of its services are not considered derived works
 and do not have to be AGPL 3 licensed.
 
 -----------------------------------------------------------------------
