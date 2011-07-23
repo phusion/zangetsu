@@ -418,7 +418,7 @@ describe "Database" do
 					});
 				});
 			})
-			output.should == "Error: not-found\n"
+			output.should == "Error: Invalid offset or data file corrupted (invalid magic)\n"
 		end
 		
 		it "returns a not-found error if the entry is corrupted" do
@@ -437,7 +437,7 @@ describe "Database" do
 					console.log("Error: " + err);
 				});
 			})
-			output.should == "Error: not-found\n"
+			output.should == "Error: Data file corrupted (invalid checksum in header)\n"
 		end
 	end
 	
@@ -566,7 +566,7 @@ describe "Database" do
 				add('foo', 1, 'another entry', added);
 			})
 			status.should == 1
-			output.should == "not-found\n"
+			output.should == "Invalid offset or data file corrupted (invalid magic)\n"
 			error.should be_empty
 		end
 	end

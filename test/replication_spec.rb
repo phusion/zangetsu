@@ -358,13 +358,14 @@ describe "Replication" do
 			end
 			
 			after :each do
+				sleep 1
 				@server_socket2.close
 			end
 			
 			def start_slave
 				@code = %Q{
 					#{@common_code}
-					server.startAsReplicaMemberWithFD(#{@server_socket.fileno},
+					server.startAsSlaveWithFD(#{@server_socket.fileno},
 						undefined, '127.0.0.1', #{TEST_SERVER_PORT2});
 				}
 				@server = async_eval_js(@code, :capture => !DEBUG)
@@ -375,7 +376,7 @@ describe "Replication" do
 			end
 			
 			def handshake(connection = @connection, args = { :identity => 'replica-member' })
-				write_json(:protocolMajor => 1, :protocolMinor => 0)
+				write_json(:protocolMajor => 1, :protocolMinor => 0, :role => 'master')
 				read_json.should == { 'identity' => 'replica-member' }
 				write_json(:status => 'ok', :your_role => 'slave', :my_role => 'master')
 			end
