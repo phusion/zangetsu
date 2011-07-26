@@ -194,19 +194,19 @@ describe "Replication" do
 				commands.should include('command' => 'removeOne',
 					'group' => 'baz', 'dayTimestamp' => 5)
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'dayTimestamp' => 2, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 2 * 24 * 60 * 60, 'opid' => 1,
 					'size' => 5, 'data' => 'world')
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'dayTimestamp' => 4, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 4 * 24 * 60 * 60, 'opid' => 1,
 					'size' => 18, 'data' => 'this is a sentence')
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'dayTimestamp' => 5, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
 					'size' => 5, 'data' => 'xxxxx')
 				commands.should include('command' => 'add',
-					'group' => 'test', 'dayTimestamp' => 5, 'opid' => 1,
+					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
 					'size' => 9, 'data' => 'test data')
 				commands.should include('command' => 'add',
-					'group' => 'test', 'dayTimestamp' => 5, 'opid' => 1,
+					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
 					'size' => 14, 'data' => 'more test data')
 				
 				read_json.should == { 'command' => 'ping' }
