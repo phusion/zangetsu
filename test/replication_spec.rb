@@ -77,7 +77,7 @@ describe "Replication" do
 				@connection = connect_to_server
 			end
 			
-			def handshake(connection = @connection, args = { :identity => 'replica-member' })
+			def handshake(connection = @connection, args = { :identity => 'replica-slave' })
 				read_json(connection)
 				write_json(connection, args)
 				return read_json(connection)
@@ -375,9 +375,9 @@ describe "Replication" do
 				@connection = @server_socket2.accept
 			end
 			
-			def handshake(connection = @connection, args = { :identity => 'replica-member' })
+			def handshake(connection = @connection, args = { :identity => 'replica-slave' })
 				write_json(:protocolMajor => 1, :protocolMinor => 0, :role => 'master')
-				read_json.should == { 'identity' => 'replica-member' }
+				read_json.should == { 'identity' => 'replica-slave' }
 				write_json(:status => 'ok', :your_role => 'slave', :my_role => 'master')
 			end
 			
