@@ -10,9 +10,9 @@ describe "ShardServer" do
 		@server_socket.listen(50)
 		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 		@code = %Q{
-			var ShardServer = require('zangetsu/shard').ShardServer;
-			var server = new Server();
-			server.startAsMasterWithFD(#{@server_socket.fileno});
+			var ShardServer = require('zangetsu/shards').ShardServer;
+			var server = new ShardServer();
+			server.startWithFD(#{@server_socket.fileno});
 		}
 		@server = async_eval_js(@code, :capture => true)
 		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
