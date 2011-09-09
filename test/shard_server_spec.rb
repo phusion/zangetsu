@@ -3,6 +3,10 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 require File.expand_path(File.dirname(__FILE__) + "/shared_server_spec")
 
 describe "ShardServer" do
+	it "should be able to add an external database"
+	it "should be able to rebalance data after adding an external database"
+	it "should be able to remove an external database without losing data"
+
 	it_should_behave_like "A Zangetsu Server"
 
 	before :each do
