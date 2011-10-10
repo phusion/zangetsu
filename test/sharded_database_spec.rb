@@ -2,6 +2,14 @@
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "ShardedDatabase" do
+	before :all do
+		@dbpath = 'tmp/db'
+		@new_server_js = %Q{
+			var ShardedDatabase = require('zangetsu/sharded_database');
+			var database = new ShardedDatabase.Database();
+		}
+	end
+
 	describe "get" do
 		it "should forward the call to the right database"
 	end
@@ -32,6 +40,44 @@ describe "ShardedDatabase" do
 	describe "unlock" do
 		it "should tell all nodes that the lock has been released"
 		it "should work when it crashes in the middle of unlocking"
+	end
+
+	describe "addToToc" do
+		before :all do
+			@output, @error = eval_js! %Q{
+				#{@new_server_js}
+				var toc = {
+					"groups" : {
+						"a" : {
+							"1" : {"size" : 1},
+							"2" : {"size" : 2}
+						}
+					}
+				};
+				var shard = {"name" : "shard1"};
+				database.addToToc(shard, toc);
+				console.log(shard.total_size);
+
+				toc = {
+					"groups" : {
+						"a" : {
+							"3" : {"size" : 1}
+						}
+					}
+				};
+				var shard2 = {"name" : "shard2"};
+				database.addToToc(shard2, toc);
+				console.log(database.toc.groups.a["2"].shard.name)
+				console.log(database.toc.groups.a["3"].shard.name)
+			}
+		end
+		it "should add a TOC from a shard to the shardserver" do
+			@output.lines.to_a[0].to_i.should == 3
+		end
+		it "should associate the shard with every TOC entry" do
+			@output.lines.to_a[1].chomp.should == "shard1"
+			@output.lines.to_a[2].chomp.should == "shard2"
+		end
 	end
 
 	describe "configure" do
