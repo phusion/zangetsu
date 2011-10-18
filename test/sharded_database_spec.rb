@@ -81,6 +81,24 @@ describe "ShardedDatabase" do
 	end
 
 	describe "configure" do
-		it "should connect to the databases listed in config/shards.json and update the toc accordingly"
+		it "should connect to the databases listed in config/shards.json
+		    and update the toc accordingly" do
+			config = %Q{
+				{ "shards" :
+				 [
+					{"hostname" : "localhost:8392"},
+					{"hostname" : "localhost:8393"},
+					{"hostname" : "localhost:8394"}
+				 ]
+				}
+			}
+			File.open('tmp/config_shards.json', 'w') {|f| f.write(config) }
+			@output, @error = eval_js! %Q{
+				var ShardedDatabase = require('zangetsu/sharded_database');
+				var database = new ShardedDatabase.Database("tmp/config_shards.json");
+				console.log();
+			}
+			pending
+		end
 	end
 end
