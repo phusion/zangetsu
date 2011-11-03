@@ -45,6 +45,64 @@ describe "SocketInputWrapper" do
 		})
 		output.should == "Data: aaabbb\n"
 	end
+
+	it "emits socket end events" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onEnd = function() {
+				console.log('End');
+			}
+			socket.emit('end');
+		})
+		output.should == "End\n"
+	end
+
+	it "emits socket end events after all data has been consumed" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				return data.length;
+			}
+			wrapper.onEnd = function() {
+				console.log('End');
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+			socket.emit('end');
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"End\n"
+	end
+
+	it "emits socket error events" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onError = function(msg) {
+				console.log('Error:', msg);
+			}
+			socket.emit('error', 'foo');
+		})
+		output.should == "Error: foo\n"
+	end
+
+	it "emits socket error events after all data has been consumed" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				return data.length;
+			}
+			wrapper.onError = function(msg) {
+				console.log('Error:', msg);
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+			socket.emit('error', 'foo');
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"Error: foo\n"
+	end
 	
 	describe "if the onData callback didn't consume everything" do
 		it "pauses the socket, re-emits the remaining data in the next tick, " +
@@ -80,17 +138,67 @@ describe "SocketInputWrapper" do
 				"Data: b\n" +
 				"Finished; paused: false\n"
 		end
+
+		it "only emits end events after all data has been consumed" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				wrapper.onData = function(data) {
+					console.log('Data:', data.toString('ascii'));
+					return 1;
+				}
+				wrapper.onEnd = function() {
+					console.log('End');
+				}
+				socket.emit('data', new Buffer('aaabbb'));
+				socket.emit('end');
+			})
+			output.should ==
+				"Data: aaabbb\n" +
+				"Data: aabbb\n" +
+				"Data: abbb\n" +
+				"Data: bbb\n" +
+				"Data: bb\n" +
+				"Data: b\n" +
+				"End\n"
+		end
+
+		it "only emits error events after all data has been consumed" do
+			output, error = eval_js!(%Q{
+				#{@header}
+				wrapper.onData = function(data) {
+					console.log('Data:', data.toString('ascii'));
+					return 1;
+				}
+				wrapper.onError = function(msg) {
+					console.log('Error:', msg);
+				}
+				socket.emit('data', new Buffer('aaabbb'));
+				socket.emit('error', 'foo');
+			})
+			output.should ==
+				"Data: aaabbb\n" +
+				"Data: aabbb\n" +
+				"Data: abbb\n" +
+				"Data: bbb\n" +
+				"Data: bb\n" +
+				"Data: b\n" +
+				"Error: foo\n"
+		end
 		
-		describe "if pause() is called after the handler" do
-			it "pauses the socket and doesn't re-emit remaining data" do
+		describe "if pause() is called after the data handler" do
+			it "pauses the socket and doesn't re-emit remaining data or the end event" do
 				output, error = eval_js!(%Q{
 					#{@header}
 					wrapper.onData = function(data) {
 						console.log("Data:", data.toString('ascii'));
 						return 1;
 					}
+					wrapper.onEnd = function() {
+						console.log("End");
+					}
 					socket.emit('data', new Buffer('aaabbb'));
 					wrapper.pause();
+					socket.emit('end');
 					console.log("Paused:", socket.paused);
 				})
 				output.should ==
@@ -265,6 +373,68 @@ describe "SocketInputWrapper" do
 			"Data: bbb\n" +
 			"Data: bb\n" +
 			"Data: b\n"
+	end
+
+	it "doesn't emit end events if it's paused, but re-emits previously unemitted end events after resume" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			var counter = 0;
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				counter++;
+				if (counter == 1) {
+					wrapper.pause();
+					return 3;
+				} else {
+					return 1;
+				}
+			}
+			wrapper.onEnd = function() {
+				console.log('End');
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+			socket.emit('end');
+			console.log('Emitted');
+			wrapper.resume();
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"Emitted\n" +
+			"Data: bbb\n" +
+			"Data: bb\n" +
+			"Data: b\n" +
+			"End\n"
+	end
+
+	it "doesn't emit error events if it's paused, but re-emits previously unemitted error events after resume" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			var counter = 0;
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				counter++;
+				if (counter == 1) {
+					wrapper.pause();
+					return 3;
+				} else {
+					return 1;
+				}
+			}
+			wrapper.onError = function(msg) {
+				console.log('Error:', msg);
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+			socket.emit('error', 'foo');
+			console.log('Emitted');
+			wrapper.resume();
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"Emitted\n" +
+			"Data: bbb\n" +
+			"Data: bb\n" +
+			"Data: b\n" +
+			"Error: foo\n"
 	end
 	
 	it "stops emitting unconsumed data once the socket is closed" do
