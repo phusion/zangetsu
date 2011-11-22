@@ -5,8 +5,27 @@ describe "Shard" do
 	# Shard is a proxy for physical shards
 	
 	def initialize_remote
-		@remote_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
-		@remote_socket.listen(50)
+		@dbpath = 'tmp/db'
+		FileUtils.mkdir_p(@dbpath)
+		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
+		@server_socket.listen(50)
+		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
+		@server_code = %Q{
+				var Server = require('zangetsu/server').Server;
+				var server = new Server("tmp/db");
+				server.startAsMasterWithFD(#{@server_socket.fileno});
+		}
+		@server = async_eval_js(@server_code, :capture => true)
+		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
+		@connection.sync = true
+	end
+
+	def finalize_remote
+		@connection.close if @connection
+		if @server && !@server.closed?
+			@server.close
+		end
+		@server_socket.close if @server_socket
 	end
 
 	before :each do
@@ -22,22 +41,28 @@ describe "Shard" do
 	end
 	
 	describe "connect" do
-		it "should connect to the shard" do
-			code = @shard_code + %Q{
-				shard.connect(function() {
+		before :each do
+			@connect_code = @shard_code + %Q{
+				shard.connect(function(message) {
 					console.log("connected");
 				});
 			}
+			# and setup server
 			initialize_remote
-			proc = async_eval_js code, :capture => true
-			c = @remote_socket.accept
+		end
+
+		after :each do
+			finalize_remote
+		end
+
+		it "should perform the handshake" do
+			proc = async_eval_js @connect_code
 			eventually do
 				output = proc.output
-				puts output if output != ""
-				proc.output == "connected"
+				proc.output == "connected\n"
 			end
-			c.close
-			@remote_socket.close
+			proc.close
 		end
 	end
+
 end
