@@ -31,6 +31,7 @@ describe "Shard" do
 	before :each do
 		@shard_code = %Q{
 			var Shard = require('zangetsu/shard').Shard;
+			var ioutils = require('zangetsu/io_utils');
 			var shard = new Shard(
 				{
 					hostname : '127.0.0.1',
@@ -65,4 +66,30 @@ describe "Shard" do
 		end
 	end
 
+	describe "add" do
+		before :each do
+			initialize_remote
+		end
+
+		after :each do
+			finalize_remote
+			if @proc
+				@proc.close
+			end
+		end
+
+		it "should add data to the shard and reply when done" do
+			code = @shard_code + %Q{
+				var done = function(err) {
+					console.log('done writing');
+				}
+				shard.add("groupName", 1, 2, 1, [new Buffer(1)], done);
+			}
+
+			@proc = async_eval_js code
+				eventually do
+				Dir.entries(@dbpath).include? "groupName"
+			end
+		end
+	end
 end
