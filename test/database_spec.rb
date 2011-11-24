@@ -5,7 +5,7 @@ describe "Database" do
 	before :each do
 		@dbpath = 'tmp/db'
 		@header = %Q{
-			var sys      = require('sys');
+			var util     = require('util');
 			var Database = require('zangetsu/database');
 			var database = new Database.Database('#{@dbpath}');
 			var CRC32    = require('zangetsu/crc32.js');
@@ -36,15 +36,15 @@ describe "Database" do
 		before :each do
 			@code = @header + %q{
 				database.reload();
-				sys.print(database.groupCount, " groups\n");
+				util.print(database.groupCount, " groups\n");
 				var groupName, group, timeEntryName, timeEntry;
 				for (groupName in database.groups) {
 					group = database.groups[groupName];
-					sys.print("Group ", groupName, ": ",
+					util.print("Group ", groupName, ": ",
 						group.timeEntryCount, " time entries\n");
 					for (timeEntryName in group.timeEntries) {
 						timeEntry = group.timeEntries[timeEntryName];
-						sys.print("Time entry ", groupName, "/",
+						util.print("Time entry ", groupName, "/",
 							timeEntryName, ": size=",
 							timeEntry.dataFileSize, "\n");
 					}
@@ -80,7 +80,7 @@ describe "Database" do
 	
 		it "generates an error if the database directory does not exist" do
 			status, output, error = eval_js(@code)
-			error.should include("No such file or directory '#{@dbpath}'")
+			error.should include("no such file or directory '#{@dbpath}'")
 			error.should include("ENOENT")
 		end
 	
@@ -88,7 +88,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo")
 			File.chmod(0300, @dbpath)
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}'")
+			error.should include("permission denied '#{@dbpath}'")
 			error.should include("EACCES")
 		end
 	
@@ -96,7 +96,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo")
 			File.chmod(0600, @dbpath)
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo'")
+			error.should include("permission denied '#{@dbpath}/foo'")
 			error.should include("EACCES")
 		end
 	
@@ -104,7 +104,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0300, @dbpath + "/foo")
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo'")
+			error.should include("permission denied '#{@dbpath}/foo'")
 			error.should include("EACCES")
 		end
 	
@@ -112,7 +112,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0600, @dbpath + "/foo")
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo/123'")
+			error.should include("permission denied '#{@dbpath}/foo/123'")
 			error.should include("EACCES")
 		end
 	
@@ -126,7 +126,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0600, @dbpath + "/foo/123")
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo/123/data'")
+			error.should include("permission denied '#{@dbpath}/foo/123/data'")
 			error.should include("EACCES")
 		end
 		
@@ -191,11 +191,11 @@ describe "Database" do
 			output, error = eval_js!(@header + %q{
 				database.reload();
 				database._findOrCreateGroup('foo');
-				sys.print("Created\n");
+				util.print("Created\n");
 				database._findOrCreateGroup('foo');
-				sys.print("Created\n");
+				util.print("Created\n");
 				database._findOrCreateGroup('foo');
-				sys.print("Created\n");
+				util.print("Created\n");
 			})
 			File.directory?(@dbpath + "/foo").should be_true
 			count_line(output, "Created").should == 3

@@ -16,17 +16,13 @@ describe "Server" do
 	before :each do
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
-		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
-		@server_socket.listen(50)
-		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 		@code = %Q{
 			var Server = require('zangetsu/server').Server;
 			var server = new Server("tmp/db");
-			server.startAsMasterWithFD(#{@server_socket.fileno});
+			server.startAsMaster('127.0.0.1', #{TEST_SERVER_PORT});
 		}
 		@server = async_eval_js(@code, :capture => true)
-		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
-		@connection.sync = true
+		@connection = wait_for_port(TEST_SERVER_PORT)
 	end
 	
 	after :each do
@@ -34,7 +30,6 @@ describe "Server" do
 		if @server && !@server.closed?
 			@server.close
 		end
-		@server_socket.close if @server_socket
 	end
 	
 	def handshake(args = {})

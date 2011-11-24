@@ -43,8 +43,15 @@ module SpecHelper
 		
 		def close(kill = true)
 			raise "Already closed" if closed?
-			self.kill if kill
-			Process.waitpid(@pid)
+			if kill
+				self.kill
+				if !timed_waitpid(@pid, 0.25)
+					Process.kill('SIGKILL', @pid)
+					Process.waitpid(@pid)
+				end
+			else
+				Process.waitpid(@pid)
+			end
 			@pid    = nil
 			@output = File.read(@output_file)
 			@error  = File.read(@error_file)
@@ -59,6 +66,19 @@ module SpecHelper
 			File.unlink(@output_file) rescue nil if @output_file
 			File.unlink(@error_file) rescue nil if @error_file
 			@script_file = @input_file = @output_file = @error_file = nil
+		end
+	
+	private
+		def timed_waitpid(pid, max_time)
+			done = false
+			start_time = Time.now
+			while Time.now - start_time < max_time && !done
+				done = Process.waitpid(pid, Process::WNOHANG)
+				sleep 0.01 if !done
+			end
+			return !!done
+		rescue Errno::ECHILD
+			return true
 		end
 	end
 	
@@ -113,17 +133,32 @@ module SpecHelper
 	end
 	
 	def wait_for_port(port = TEST_SERVER_PORT)
-		Timeout.timeout(5) do
+		Timeout.timeout(50) do
 			while true
 				begin
-					puts 'connecting'
-					socket = TCPSocket.new('127.0.0.1', port)
-					puts 'connected'
+					socket = Socket.new(Socket::Constants::AF_INET, Socket::Constants::SOCK_STREAM, 0)
+					sockaddr = Socket.pack_sockaddr_in(port, '127.0.0.1')
+					#puts 'connecting'
+					begin
+						socket.connect_nonblock(sockaddr)
+					rescue Errno::EINPROGRESS, Errno::EAGAIN, Errno::EWOULDBLOCK
+						#puts 'waiting'
+						if select(nil, [socket], nil, 0.1)
+							begin
+								socket.connect_nonblock(sockaddr)
+							rescue Errno::EISCONN
+							end
+						else
+							raise Errno::ECONNREFUSED
+						end
+					end
+					#puts 'connected'
 					socket.sync = true
 					return socket
 				rescue Errno::ECONNREFUSED
-					puts 'refused'
-					sleep 0.1
+					#puts "refused"
+					socket.close
+					sleep 0.01
 				end
 			end
 		end

@@ -14,7 +14,6 @@ describe "Replication" do
 		
 		@dbpath = 'tmp/db'
 		@common_code = %Q{
-			var sys      = require('sys');
 			var Server   = require('zangetsu/server');
 			var server   = new Server.Server('#{@dbpath}');
 			var Database = require('zangetsu/database');
@@ -45,9 +44,6 @@ describe "Replication" do
 	
 	before :each do
 		FileUtils.mkdir_p(@dbpath)
-		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
-		@server_socket.listen(50)
-		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 	end
 	
 	after :each do
@@ -57,13 +53,10 @@ describe "Replication" do
 			sleep 0.1 if DEBUG
 			@server.close
 		end
-		@server_socket.close if @server_socket
 	end
 	
 	def connect_to_server(port = TEST_SERVER_PORT)
-		socket = TCPSocket.new('127.0.0.1', port)
-		socket.sync = true
-		return socket
+		return wait_for_port(port)
 	end
 	
 	context "master server" do
@@ -71,7 +64,7 @@ describe "Replication" do
 			def start_master
 				@code = %Q{
 					#{@common_code}
-					server.startAsMasterWithFD(#{@server_socket.fileno});
+					server.startAsMaster('127.0.0.1', #{TEST_SERVER_PORT});
 				}
 				@server = async_eval_js(@code, :capture => !DEBUG)
 				@connection = connect_to_server
@@ -365,8 +358,7 @@ describe "Replication" do
 			def start_slave
 				@code = %Q{
 					#{@common_code}
-					server.startAsSlaveWithFD(#{@server_socket.fileno},
-						undefined, '127.0.0.1', #{TEST_SERVER_PORT2});
+					server.startAsSlave('127.0.0.1', #{TEST_SERVER_PORT2})
 				}
 				@server = async_eval_js(@code, :capture => !DEBUG)
 				Timeout.timeout(3, RuntimeError) do
@@ -393,5 +385,5 @@ describe "Replication" do
 				handshake
 			end
 		end
-	end
+	end if false
 end
