@@ -10,6 +10,69 @@ describe "ShardedDatabase" do
 		}
 	end
 
+	def initialize_remote
+		@dbpath = 'tmp/db'
+		FileUtils.mkdir_p(@dbpath)
+		@shard_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
+		@shard_socket.listen(50)
+		@shard_socket.fcntl(Fcntl::F_SETFL, @shard_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
+		@shard_code = %Q{
+				var Server = require('zangetsu/server').Server;
+				var server = new Server("tmp/db");
+				server.startAsMasterWithFD(#{@server_socket.fileno});
+		}
+		@shard = async_eval_js(@shard_code, :capture => true)
+		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
+		@connection.sync = true
+	end
+
+	def finalize_remote
+		@connection.close if @connection
+		if @shard && !@shard.closed?
+			@shard.close
+		end
+		@shard_socket.close if @shard_socket
+	end
+
+	before :each do
+		@shard_code = %Q{
+			var Shard = require('zangetsu/shard').Shard;
+			var ioutils = require('zangetsu/io_utils');
+			var shard = new Shard(
+				{
+					hostname : '127.0.0.1',
+					port: #{TEST_SERVER_PORT}
+				}
+			);
+		}
+		initialize_remote
+	end
+
+	after :each do
+		finalize_remote
+		if @proc && !@proc.closed?
+			@proc.close
+		end
+	end
+
+	describe "acquireLock" do
+		it "should ask other shardservers for the lock"
+	end
+
+	# TODO possible issue:
+	#   since locks are acquired when new files are added, and new files get added
+	#   when new days start, all locks acquires will rougly be at the same time..
+
+	describe "giveLock" do
+		it "should acknowledge and register the lock"
+		it "should deny when higher ranked and also requesting lock"
+		it "cancel lock requests that have been superseded by higher ranking server"
+	end
+
+	describe "releaseLock" do
+		it "should release a lock the shardserver owns"
+	end
+
 	describe "get" do
 		it "should forward the call to the right database"
 	end
