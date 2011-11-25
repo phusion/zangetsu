@@ -39,6 +39,14 @@ describe "Shard" do
 				}
 			);
 		}
+		initialize_remote
+	end
+
+	after :each do
+		finalize_remote
+		if @proc && !@proc.closed?
+			@proc.close
+		end
 	end
 	
 	describe "connect" do
@@ -48,47 +56,145 @@ describe "Shard" do
 					console.log("connected");
 				});
 			}
-			# and setup server
-			initialize_remote
-		end
-
-		after :each do
-			finalize_remote
 		end
 
 		it "should perform the handshake" do
-			proc = async_eval_js @connect_code
+			@proc = async_eval_js @connect_code
 			eventually do
-				output = proc.output
-				proc.output == "connected\n"
+				output = @proc.output
+				@proc.output == "connected\n"
 			end
-			proc.close
 		end
 	end
 
 	describe "add" do
-		before :each do
-			initialize_remote
-		end
-
-		after :each do
-			finalize_remote
-			if @proc
-				@proc.close
-			end
-		end
-
 		it "should add data to the shard and reply when done" do
 			code = @shard_code + %Q{
 				var done = function(err) {
-					console.log('done writing');
+					console.log(err);
 				}
-				shard.add("groupName", 1, 2, 1, [new Buffer(1)], done);
+				var buffer = new Buffer("string");
+				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
 			}
 
 			@proc = async_eval_js code
-				eventually do
-				Dir.entries(@dbpath).include? "groupName"
+			eventually do
+				Dir.entries(@dbpath).include? "groupName" and
+				Dir.entries(@dbpath + '/groupName').include? "0"
+			end
+		end
+	end
+
+	describe "get" do
+		it "should fetch data from the shard" do
+			code = @shard_code + %Q{
+				var callback = function(message, buffers) {
+					console.log(buffers[0].toString('utf8'));
+				}
+				var done = function(err) {
+					shard.get("groupName", 1, 0, callback);
+				}
+				var buffer = new Buffer("string");
+				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
+			}
+			@proc = async_eval_js code
+			eventually do
+				@proc.output == "string\n"
+			end
+		end
+	end
+
+	describe "getTOC" do
+		it "should fetch the toc from the shard" do
+			code = @shard_code + %Q{
+				var callback = function(message, buffers) {
+					var truth = message.groupName['0'].size == 26;
+					console.log(truth);
+				}
+				var done = function(err) {
+					shard.getTOC(callback);
+				}
+				var buffer = new Buffer("string");
+				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
+			}
+			@proc = async_eval_js code
+			eventually do
+				@proc.output == "true\n"
+			end
+		end
+	end
+
+	describe "results" do
+		it "should get the results of previous write operations" do
+			pending "Ask hongli how results should behave"
+			code = @shard_code + %Q{
+				var callback = function(message, buffers) {
+					console.log(message);
+				}
+				var done = function(err) {
+					shard.results(false, callback);
+				}
+				var buffer = new Buffer("string");
+				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
+			}
+			@proc = async_eval_js code, :capture => false
+			eventually do
+				@proc.output == "true\n"
+			end
+		end
+	end
+
+	describe "ping" do
+		it "should receive a reply from the shard" do
+			code = @shard_code + %Q{
+				var callback = function(message, buffers) {
+					console.log(message.status == 'ok');
+				}
+				shard.ping(callback);
+			}
+			@proc = async_eval_js code
+			eventually do
+				@proc.output == "true\n"
+			end
+		end
+	end
+
+	describe "remove" do
+		it "should remove data from one group" do
+			code = @shard_code + %Q{
+				var callback = function(message, buffers) {
+					console.log(message.status == 'ok');
+				}
+				var done = function(err) {
+					shard.remove("groupName", null, callback);
+				}
+				var buffer = new Buffer("string");
+				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
+			}
+			@proc = async_eval_js code
+			eventually do
+				@proc.output == "true\n" and
+					not Dir.entries(@dbpath).include? "groupName"
+			end
+		end
+	end
+
+	describe "removeOne" do
+		it "should remove data for one timestamp" do
+			code = @shard_code + %Q{
+				var callback = function(message, buffers) {
+					console.log(message.status == 'ok');
+				}
+				var done = function(err) {
+					shard.removeOne("groupName", 0, callback);
+				}
+				var buffer = new Buffer("string");
+				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
+			}
+			@proc = async_eval_js code
+			eventually do
+				@proc.output == "true\n" and
+					not Dir.entries(@dbpath + '/groupName').include? "0"
 			end
 		end
 	end
