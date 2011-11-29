@@ -97,7 +97,7 @@ describe "Replication" do
 					
 					add('test', 5, 'test data');
 					add('test', 5, 'more test data');
-				})
+				}, :capture => false)
 				FileUtils.mkdir_p("#{@dbpath}/test/3")
 				FileUtils.mkdir_p("#{@dbpath}/test/4")
 				
@@ -116,7 +116,7 @@ describe "Replication" do
 					add('baz', 3, 'xxx');
 					add('baz', 5, 'xxxxxxxxxxx');
 					add('baz', 6, 'xxx');
-				})
+				}, :capture => false)
 				
 				slave_toc = {
 					# Doesn't exist on the master
