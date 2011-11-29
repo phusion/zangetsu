@@ -19,6 +19,8 @@ describe "Replication" do
 			var Database = require('zangetsu/database');
 			var database = server.database;
 			var CRC32    = require('zangetsu/crc32.js');
+
+			server.resultCheckThreshold = 1;
 			
 			function add(groupName, dayTimestamp, strOrBuffers, callback) {
 				var buffers;
@@ -88,7 +90,7 @@ describe "Replication" do
 			it "synchronizes the joining server" do
 				eval_js!(%Q{
 					#{@common_code}
-					
+
 					add('baz', 2, 'hello');
 					add('baz', 2, 'world');
 					add('baz', 4, 'this is a sentence');
@@ -172,11 +174,12 @@ describe "Replication" do
 						command['data'] = @connection.read(command['size'])
 						commands << command
 						read_json.should == { 'command' => 'results' }
-						write_json(:status => 'ok', :results => { 1 => 0 })
+						write_json(:status => 'ok', :results => { 0 => { :status => 'ok' } })
 					else
 						commands << command
 						write_json(:status => 'ok')
 					end
+					STDIN.readline
 				end
 				commands.should include('command' => 'remove', 'group' => 'foo')
 				commands.should include('command' => 'remove', 'group' => 'bar')
