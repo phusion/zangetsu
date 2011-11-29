@@ -179,7 +179,6 @@ describe "Replication" do
 						commands << command
 						write_json(:status => 'ok')
 					end
-					STDIN.readline
 				end
 				commands.should include('command' => 'remove', 'group' => 'foo')
 				commands.should include('command' => 'remove', 'group' => 'bar')
