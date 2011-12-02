@@ -211,14 +211,140 @@ describe "Replication" do
 				should_never_happen { socket_readable?(@connection) }
 			end
 			
-			specify "if anything was removed from the database while synchronization " +
-			        "is in progress then those concurrent removals won't be missed" do
-				pending
-			end
-			
-			specify "if anything was written to the database while synchronization " +
-			        "is in progress then those concurrent adds won't be missed" do
-				pending
+			specify "if anything was written or removed from the database while synchronization " +
+			        "is in progress then those concurrent modifications won't be missed" do
+				eval_js!(%Q{
+					#{@common_code}
+					add('foo', 1, 'foo1')
+					add('foo', 2, 'foo2')
+					add('foo', 3, 'foo3')
+				})
+
+				start_master
+
+				# Slave joins master
+				@replica = @connection
+				handshake(@replica)
+				read_json(@replica).should == { 'command' => 'getToc' }
+				write_json(@replica, {})
+
+				# Normal client connects to master
+				@client = @connection2 = connect_to_server
+				handshake(@client, {})
+				
+
+				# Now, back to the replica...
+
+				# Expecting 'foo1' record from master.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => "foo1".size,
+					'opid' => 0
+				}
+				@replica.read('foo1'.size).should == 'foo1'
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				# Expecting 'foo2' record from master.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => "foo2".size,
+					'opid' => 0
+				}
+				@replica.read('foo2'.size).should == 'foo2'
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				# Expecting 'foo3' record from master.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 72 * 60 * 60,
+					'size' => "foo3".size,
+					'opid' => 0
+				}
+				@replica.read('foo3'.size).should == 'foo3'
+
+				# Before acknowledging this replication command, modify foo/2
+				# and remove foo/1.
+				write_json(@client,
+					:command => 'add',
+					:group => 'foo',
+					:timestamp => 48 * 60 * 60 + 1,
+					:size => 'hi'.size,
+					:opid => 0)
+				@client.write('hi')
+				write_json(@client,
+					:command => 'remove',
+					:group => 'foo',
+					:timestamp => 48 * 60 * 60)
+				read_json(@client).should == { 'status' => 'ok' }
+				write_json(@client, :command => 'results')
+				read_json(@client)['status'].should == 'ok'
+
+				# Now acknowledge the last replication command.
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				# Expecting removal of foo/1.
+				read_json(@replica).should == {
+					'command' => 'removeOne',
+					'group' => 'foo',
+					'dayTimestamp' => 1
+				}
+				write_json(@replica, :status => 'ok')
+
+				# Expecting foo/2 'hi' record.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => "hi".size,
+					'opid' => 0
+				}
+				@replica.read('hi'.size).should == 'hi'
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => @header_size + 'foo2'.size + @footer_size
+						}
+					}
+				)
+
+				read_json(@replica).should == { 'command' => 'ping' }
+				write_json(@replica, :status => 'ok')
+				should_never_happen { socket_readable?(@replica) }
 			end
 			
 			it "sends the topology after synchronization finishes"
