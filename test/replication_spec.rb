@@ -51,6 +51,7 @@ describe "Replication" do
 	after :each do
 		@connection.close if @connection
 		@connection2.close if @connection2
+		@connection3.close if @connection3
 		if @server && !@server.closed?
 			sleep 0.1 if DEBUG
 			@server.close
@@ -210,21 +211,13 @@ describe "Replication" do
 				should_never_happen { socket_readable?(@connection) }
 			end
 			
-			it "doesn't send removal commands if there's nothing to prune" do
-				pending
-			end
-			
-			it "doesn't send add commands if there's nothing to fill" do
-				pending
-			end
-			
 			specify "if anything was removed from the database while synchronization " +
-				"is in progress then those concurrent removals won't be missed" do
+			        "is in progress then those concurrent removals won't be missed" do
 				pending
 			end
 			
 			specify "if anything was written to the database while synchronization " +
-				"is in progress then those concurrent adds won't be missed" do
+			        "is in progress then those concurrent adds won't be missed" do
 				pending
 			end
 			
@@ -356,7 +349,165 @@ describe "Replication" do
 				should_never_happen { socket_readable?(@connection) }
 			end
 			
-			specify "it refills a time entry if filling fails because the slave time entry size is incorrect"
+			specify "an add operation only completes after it has been replicated to all slaves" do
+				FileUtils.mkdir_p("#{@dbpath}/foo/2")
+				File.open("#{@dbpath}/foo/2/data", "w") do |f|
+					f.write("xxxxx")
+				end
+				start_master
+				
+				# Replica member 1 joins master
+				@replica1 = @connection
+				handshake(@replica1)
+				read_json(@replica1).should == { 'command' => 'getToc' }
+				write_json(@replica1,
+					:foo => {
+						2 => {
+							:size => 5
+						}
+					}
+				)
+				read_json(@replica1).should == { 'command' => 'ping' }
+				write_json(@replica1, :status => 'ok')
+				
+				# Replica member 2 joins master
+				@replica2 = @connection2 = connect_to_server
+				handshake(@replica2)
+				read_json(@replica2).should == { 'command' => 'getToc' }
+				write_json(@replica2,
+					:foo => {
+						2 => {
+							:size => 5
+						}
+					}
+				)
+				read_json(@replica2).should == { 'command' => 'ping' }
+				write_json(@replica2, :status => 'ok')
+
+				# Regular client connects to master
+				@client = @connection3 = connect_to_server
+				handshake(@client, {})
+
+
+				# Tell master to add to foo/2
+				data = 'hello'
+				write_json(@client,
+					:command => 'add',
+					:group => 'foo',
+					:timestamp => 48 * 60 * 60,
+					:size => data.size,
+					:opid => 1)
+				@client.write(data)
+
+				# Master should not respond to 'results' command yet
+				# because no slave has accepted the data yet.
+				write_json(@client, :command => 'results')
+				should_never_happen { socket_readable?(@client) }
+
+				# Slave 1 now accepts the data, but master still doesn't
+				# respond to 'results' yet.
+				read_json(@replica1).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => data.size,
+					'opid' => 0
+				}
+				@replica1.read(data.size).should == data
+				read_json(@replica1).should == { 'command' => 'results' }
+				write_json(@replica1, :status => 'ok')
+				should_never_happen { socket_readable?(@client) }
+				
+				# Slave 2 now accepts the data. Master now responds to
+				# 'results' command.
+				read_json(@replica2).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => data.size,
+					'opid' => 0
+				}
+				@replica2.read(data.size).should == data
+				read_json(@replica2).should == { 'command' => 'results' }
+				write_json(@replica2, :status => 'ok')
+				read_json(@client).should == {
+					'status' => 'ok',
+					'results' => {
+						'1' => {
+							'status' => 'ok',
+							'offset' => 5
+						}
+					}
+				}
+			end
+
+			it "refills a time entry if filling fails because the slave time entry data file is corrupted" do
+				# If the data file in the slave time entry is truncated, then
+				# the master's attempt to stream from slaveTimeEntry.size will fail.
+				# In that case the entire time entry should be refilled.
+				
+				eval_js!(%Q{
+					#{@common_code}
+					add('foo', 1, 'hello');
+					add('foo', 1, 'world');
+				})
+
+				start_master
+				handshake
+				read_json.should == { 'command' => 'getToc' }
+				write_json({
+					:foo => {
+						1 => {
+							:size => @header_size
+						}
+					}
+				})
+				
+				read_json.should == {
+					'command' => 'removeOne',
+					'group' => 'foo',
+					'dayTimestamp' => 1
+				}
+				write_json(:status => 'ok')
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'hello'.size,
+					'opid' => 0
+				}
+				@connection.read('hello'.size).should == 'hello'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'world'.size,
+					'opid' => 0
+				}
+				@connection.read('world'.size).should == 'world'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => @header_size + 'hello'.size + @footer_size
+						}
+					}
+				)
+			end
 		end
 	end
 	
