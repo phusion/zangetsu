@@ -100,6 +100,38 @@ describe "ShardedDatabase" do
 		# TODO possible issue:
 		#   since locks are acquired when new files are added, and new files get added
 		#   when new days start, all locks acquires will rougly be at the same time..
+		#
+		# TODO
+		#	Rekening houden met dat shardservers down kunnen gaan
+		#
+		# Design:
+		# When a file needs to be changed, a node requests the lock. It will
+		# do so by sending a lock request to all registered shard servers.
+		# When another shard server requests the same lock at the same time
+		# with it will deny the request.
+		# When a shard server has acknowledged a request, but gets a request
+		# with a higher priority it will acknowledge it and replace the ownership.
+		# When a shard server has requested a lock but receives a lock request
+		# with higher authority it will change the ownership of the lock to that
+		# and block its own operation until the lock is released.
+		# When a node has acknowledged a lock it may not request the lock itself
+		# until the lock has been released.
+		# When a node is done with a lock it will announce the release to all
+		# nodes.
+		# When a node crashes that holds a lock other nodes will remove the node
+		# from their acknowledgement tables and release the lock.
+		# When a node recuperates from a crash it will not own any locks.
+		#
+		# Freedom from Deadlock: Because a higher priority node always wins when
+		# multiple nodes require the same lock no deadlock can occur.
+		# Mutual exclusion: Because a lock has to be acknowledged by all other nodes
+		# and a node cannot request a lock it has already acknowledged there can
+		# be no situation wherein two nodes think they own the same lock.
+		# Freedom from starvation: Not guaranteed for low-priority nodes. Can be
+		# improved by adding a random (time-based) value to the priority.
+		#
+		# Correctness: No effort will be made to correct any incomplete actions
+		# executed by zangetsu.
 
 		describe "giveLock" do
 			before :each do
@@ -119,7 +151,7 @@ describe "ShardedDatabase" do
 				}
 			end
 			it "should deny when higher ranked and also requesting lock"
-			it "cancel lock requests that have been superseded by higher ranking server"
+			it "should update lockTable with higher ranked server"
 		end
 
 		describe "releaseLock" do
