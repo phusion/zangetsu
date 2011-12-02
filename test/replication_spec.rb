@@ -189,19 +189,19 @@ describe "Replication" do
 				commands.should include('command' => 'removeOne',
 					'group' => 'baz', 'dayTimestamp' => 5)
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'timestamp' => 2 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 2 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 5, 'data' => 'world')
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'timestamp' => 4 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 4 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 18, 'data' => 'this is a sentence')
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 5, 'data' => 'xxxxx')
 				commands.should include('command' => 'add',
-					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 9, 'data' => 'test data')
 				commands.should include('command' => 'add',
-					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 14, 'data' => 'more test data')
 				
 				read_json.should == { 'command' => 'ping' }
@@ -254,6 +254,9 @@ describe "Replication" do
 				@connection2 = connect_to_server
 				handshake(@connection2, {})
 				
+
+				# Let's command the master to do a few things
+
 				# Adds to foo/2
 				write_json(@connection2,
 					:command => 'add',
@@ -280,6 +283,52 @@ describe "Replication" do
 					:size => "xxx".size,
 					:opid => 3)
 				@connection2.write("xxx")
+
+
+				# The slave should receive the same commands in the same order
+
+				# Replication command for adding to add/2
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => "hello".size,
+					'opid' => 0
+				}
+				@connection.read("hello".size).should == "hello"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+
+				# Replication command for adding to foo/1
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => "world".size,
+					'opid' => 0
+				}
+				@connection.read("world".size).should == "world"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+
+				# Replication command for adding to foo/3
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 72 * 60 * 60,
+					'size' => "xxx".size,
+					'opid' => 0
+				}
+				@connection.read("xxx".size).should == "xxx"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+
+
+				# Now back to the master...
+
+				# Wait until add commands on the master are done
+				write_json(@connection2, :command => 'results')
+				read_json(@connection2)['status'].should == 'ok'
 				
 				# Removes foo/1 and foo/2
 				write_json(@connection2,
@@ -288,40 +337,7 @@ describe "Replication" do
 					:timestamp => 72 * 60 * 60)
 				read_json(@connection2)['status'].should == 'ok'
 				
-				write_json(@connection2, :command => 'results')
-				read_json(@connection2)['status'].should == 'ok'
-				
-				# We expect all commands to be replicated in the same order
-				
-				read_json.should == {
-					'command' => 'add',
-					'group' => 'foo',
-					'dayTimestamp' => 2,
-					'size' => "hello".size
-				}
-				@connection.read("hello".size).should == "hello"
-				read_json.should == { 'command' => 'results' }
-				write_json(:status => 'ok')
-				
-				read_json.should == {
-					'command' => 'add',
-					'group' => 'foo',
-					'dayTimestamp' => 1,
-					'size' => "world".size
-				}
-				@connection.read("world".size).should == "world"
-				read_json.should == { 'command' => 'results' }
-				write_json(:status => 'ok')
-				
-				read_json.should == {
-					'command' => 'add',
-					'group' => 'foo',
-					'dayTimestamp' => 3,
-					'size' => "xxx".size
-				}
-				@connection.read("xxx".size).should == "xxx"
-				read_json.should == { 'command' => 'results' }
-				write_json(:status => 'ok')
+				# The removal command should have been replicaed
 				
 				read_json.should == {
 					'command' => 'removeOne',
