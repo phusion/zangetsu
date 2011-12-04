@@ -1,4 +1,9 @@
 *.node
 .DS_Store
+/db
+/db2
+/db3
 ext/.lock-wscript
 ext/build
+doc/*.html
+doc/*.idmap.txt
