@@ -130,7 +130,7 @@ describe "Server" do
 			@connection.write("hello")
 			response = read_json
 			response["status"].should == "error"
-			response["message"].should =~ /opid is already given/
+			response["message"].should =~ /opid is already used/
 		end
 	end
 	
