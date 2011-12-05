@@ -305,6 +305,8 @@ describe "Database" do
 				"ZaET" +
 				# Length
 				["hello world".size].pack('N') +
+				# Flags
+				"\0" +
 				# Data
 				"hello world" +
 				# Checksum
@@ -347,17 +349,17 @@ describe "Database" do
 					database.findTimeEntry('foo', 123).writtenSize);
 			})
 			output.should ==
-				"DataFileSize 39\n" +
+				"DataFileSize 40\n" +
 				"WrittenSize 0\n" +
 				
 				"Added at 0\n" +
-				"WrittenSize 39\n" +
-				"DataFileSize 78\n" +
-				"WrittenSize 39\n" +
+				"WrittenSize 40\n" +
+				"DataFileSize 80\n" +
+				"WrittenSize 40\n" +
 				
-				"Added at 39\n" +
-				"DataFileSize 78\n" +
-				"WrittenSize 78\n"
+				"Added at 40\n" +
+				"DataFileSize 80\n" +
+				"WrittenSize 80\n"
 		end
 	end
 	
@@ -380,7 +382,7 @@ describe "Database" do
 				database.reload();
 				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, data) {
 					if (err) {
-						console.log("Error:", err);
+						console.log("Error:", err.message);
 					} else {
 						console.log("Data:", data.toString('ascii'));
 					}
@@ -391,39 +393,39 @@ describe "Database" do
 		it "works" do
 			eval_js!(@add_code)
 			output = eval_js!(@add_code).first
-			offset = 4 + 4 + 'hello world'.size + 4 + 8 + 4 + 4
+			offset = 4 + 4 + 1 + 'hello world'.size + 4 + 8 + 4 + 4
 			output.should include("Added at #{offset}\n")
 			
 			output, error = run_get_function('foo', 123, offset)
 			output.should include("Data: hello world\n")
 		end
 		
-		it "returns a not-found error if the requested group does not exist" do
+		it "returns an ERR_NOT_FOUND error if the requested group does not exist" do
 			eval_js!(@add_code)
 			output, error = run_get_function('bar', 123, 0)
-			output.should include("Error: not-found\n")
+			output.should include("Error: Time entry not found\n")
 		end
 		
-		it "returns a not-found error if the requested time entry does not exist" do
+		it "returns an ERR_NOT_FOUND error if the requested time entry does not exist" do
 			eval_js!(@add_code)
 			FileUtils.mkdir_p("#{@dbpath}/foo/123")
 			output, error = run_get_function('foo', 456, 0)
-			output.should include("Error: not-found\n")
+			output.should include("Error: Time entry not found\n")
 		end
 		
-		it "returns a not-found error if an invalid offset" do
+		it "returns an error if an invalid offset is given" do
 			output, error = eval_js!(%Q{
 				#{@header}
 				add('foo', 1, 'hello world', function(offset) {
 					database.get('foo', 1, 1, function(err) {
-						console.log("Error: " + err);
+						console.log("Error: " + err.message);
 					});
 				});
 			})
 			output.should == "Error: Invalid offset or data file corrupted (invalid magic)\n"
 		end
 		
-		it "returns a not-found error if the entry is corrupted" do
+		it "returns an error if the record is corrupted" do
 			eval_js!(%Q{
 				#{@header}
 				add('foo', 1, 'hello world')
@@ -436,10 +438,29 @@ describe "Database" do
 				#{@header}
 				database.reload();
 				database.get('foo', 1, 0, function(err) {
-					console.log("Error: " + err);
+					console.log("Error: " + err.message);
 				});
 			})
 			output.should == "Error: Data file corrupted (invalid checksum in header)\n"
+		end
+
+		it "returns an error if the record has the corruption flag set" do
+			eval_js!(%Q{
+				#{@header}
+				add('foo', 1, 'hello world')
+			})
+			File.open("#{@dbpath}/foo/1/data", "r+") do |f|
+				f.seek(8, IO::SEEK_SET)
+				f.write("\1")
+			end
+			output, error = eval_js!(%Q{
+				#{@header}
+				database.reload();
+				database.get('foo', 1, 0, function(err) {
+					console.log("Error: " + err.message);
+				});
+			})
+			output.should == "Error: Record is marked as corrupted\n"
 		end
 	end
 	
@@ -509,7 +530,7 @@ describe "Database" do
 						function(err, buf, rawSize, continueReading, stop)
 					{
 						if (err) {
-							console.log(err);
+							console.log(err.message);
 							process.exit(1);
 						}
 						if (buf.length > 0) {
@@ -551,7 +572,7 @@ describe "Database" do
 						function(err, buf, continueReading, stop)
 					{
 						if (err) {
-							console.log(err);
+							console.log(err.message);
 							process.exit(1);
 						}
 						if (buf.length > 0) {
