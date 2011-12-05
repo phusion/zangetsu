@@ -309,6 +309,8 @@ describe "Database" do
 				"hello world" +
 				# Checksum
 				"\x00\x00\x0d\x4a" +
+				# Reserved
+				"\0\0\0\0\0\0\0\0" +
 				# Length
 				["hello world".size].pack('N') +
 				# Footer magic
@@ -345,17 +347,17 @@ describe "Database" do
 					database.findTimeEntry('foo', 123).writtenSize);
 			})
 			output.should ==
-				"DataFileSize 31\n" +
+				"DataFileSize 39\n" +
 				"WrittenSize 0\n" +
 				
 				"Added at 0\n" +
-				"WrittenSize 31\n" +
-				"DataFileSize 62\n" +
-				"WrittenSize 31\n" +
+				"WrittenSize 39\n" +
+				"DataFileSize 78\n" +
+				"WrittenSize 39\n" +
 				
-				"Added at 31\n" +
-				"DataFileSize 62\n" +
-				"WrittenSize 62\n"
+				"Added at 39\n" +
+				"DataFileSize 78\n" +
+				"WrittenSize 78\n"
 		end
 	end
 	
@@ -389,7 +391,7 @@ describe "Database" do
 		it "works" do
 			eval_js!(@add_code)
 			output = eval_js!(@add_code).first
-			offset = 4 + 4 + 'hello world'.size + 4 + 4 + 4
+			offset = 4 + 4 + 'hello world'.size + 4 + 8 + 4 + 4
 			output.should include("Added at #{offset}\n")
 			
 			output, error = run_get_function('foo', 123, offset)
