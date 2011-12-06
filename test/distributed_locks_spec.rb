@@ -22,7 +22,7 @@ describe "Distributed locks" do
 
 	describe "acquireLock" do
 		it "should ask other shardservers for the lock" do
-			@output, @error = eval_js! %Q{
+			@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					database.addShardServer({hostname: 'aap', port: 5321});
@@ -35,11 +35,13 @@ describe "Distributed locks" do
 					database.acquireLock("group", 1);
 					console.log(database.lockTable["group" + '/' + 1].hostname);
 			}
-			@output.should == "acquireLock\nacquireLock\nacquireLock\nlocalhost\n"
+			eventually do
+				@proc.output == "acquireLock\nacquireLock\nacquireLock\nlocalhost\n"
+			end
 		end
 
 		it "should not ask for locks for existing lock but queue callback" do
-			@output, @error = eval_js! %Q{
+			@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					database.addShardServer({hostname: 'aap', port: 5321});
@@ -51,7 +53,10 @@ describe "Distributed locks" do
 					database.acquireLock("group", 1, function(){});
 					console.log(database.lockTable["group/1"].callbacks.length);
 			}
-			@output.should == "2\n"
+			eventually do
+				@proc.output == "2\n"
+			end
+			@proc.close
 		end
 	end
 
