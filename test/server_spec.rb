@@ -2,17 +2,6 @@
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "Server" do
-	before :all do
-		output, error = eval_js!(%Q{
-			var TimeEntry = require('zangetsu/time_entry.js');
-			console.log(TimeEntry.HEADER_SIZE);
-			console.log(TimeEntry.FOOTER_SIZE);
-		})
-		@header_size, @footer_size = output.split("\n")
-		@header_size = @header_size.to_i
-		@footer_size = @footer_size.to_i
-	end
-	
 	before :each do
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
@@ -21,7 +10,7 @@ describe "Server" do
 			var server = new Server("tmp/db");
 			server.startAsMaster('127.0.0.1', #{TEST_SERVER_PORT});
 		}
-		@server = async_eval_js(@code, :capture => true)
+		@server = async_eval_js(@code, :capture => !DEBUG)
 		@connection = wait_for_port(TEST_SERVER_PORT)
 	end
 	
@@ -71,7 +60,7 @@ describe "Server" do
 			end
 			eventually do
 				File.stat("#{@dbpath}/foo/2/data").size ==
-					@header_size + "hello world".size + @footer_size
+					HEADER_SIZE + "hello world".size + FOOTER_SIZE
 			end
 		end
 		
@@ -102,15 +91,15 @@ describe "Server" do
 					},
 					"2" => {
 						"status" => "ok",
-						"offset" => @header_size + "hello".size + @footer_size
+						"offset" => HEADER_SIZE + "hello".size + FOOTER_SIZE
 					}
 				},
 				"status" => "ok"
 			}
 			
 			File.stat("#{@dbpath}/foo/2/data").size.should ==
-				@header_size + "hello".size + @footer_size +
-				@header_size + "world!".size + @footer_size
+				HEADER_SIZE + "hello".size + FOOTER_SIZE +
+				HEADER_SIZE + "world!".size + FOOTER_SIZE
 		end
 		
 		it "complains if an opid is given for which the result isn't yet fetched" do
@@ -196,11 +185,66 @@ describe "Server" do
 				"results" => {
 					"1" => {
 						"status" => "ok",
-						"offset" => @header_size + "hello".size + @footer_size
+						"offset" => HEADER_SIZE + "hello".size + FOOTER_SIZE
 					}
 				},
 				"status" => "ok"
 			}
+		end
+	end
+
+	describe "getting" do
+		before :each do
+			handshake
+		end
+
+		def add_data(data, options = {})
+			write_json({
+				:command => 'add',
+				:group => 'foo',
+				:timestamp => 24 * 60 * 60,
+				:size => data.size,
+				:opid => 1
+			}.merge(options))
+			@connection.write(data)
+			write_json(:command => 'results')
+			results = read_json
+			results['status'].should == 'ok'
+			return results['results']['1']['offset']
+		end
+
+		it "works" do
+			add_data('hello')
+			write_json(:command => 'get',
+				:group => 'foo',
+				:timestamp => 24 * 60 * 60,
+				:offset => 0)
+			result = read_json
+			result['status'].should == 'ok'
+			result['corrupted'].should be_nil
+			@connection.read(result['size']).should == 'hello'
+		end
+
+		it "only returns metadata for corrupted records" do
+			add_data('hello', :corrupted => true)
+			write_json(:command => 'get',
+				:group => 'foo',
+				:timestamp => 24 * 60 * 60,
+				:offset => 0)
+			result = read_json
+			result['status'].should == 'ok'
+			result['corrupted'].should be_true
+			@connection.read(result['size']).should == 'hello'
+		end
+
+		it "returns an error if the read operation fails" do
+			write_json(:command => 'get',
+				:group => 'foo',
+				:timestamp => 24 * 60 * 60,
+				:offset => 0)
+			result = read_json
+			result['status'].should == 'error'
+			result['message'].should == 'Cannot get requested data: Time entry not found'
 		end
 	end
 end

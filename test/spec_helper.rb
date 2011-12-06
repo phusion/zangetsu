@@ -11,6 +11,7 @@ DEBUG = ['1', 'yes', 'y', 'true'].include?(ENV['DEBUG'])
 
 module SpecHelper
 	ROOT = File.expand_path(File.dirname(__FILE__) + "/..")
+	extend self
 	
 	class BackgroundNodeProcess
 		attr_accessor :script_file, :pid
@@ -207,6 +208,15 @@ module SpecHelper
 		violated "Something that should eventually happen never happened"
 	end
 end
+
+output, error = SpecHelper.eval_js!(%Q{
+	var TimeEntry = require('zangetsu/time_entry.js');
+	console.log(TimeEntry.HEADER_SIZE);
+	console.log(TimeEntry.FOOTER_SIZE);
+})
+lines = output.split("\n")
+HEADER_SIZE = lines[0].to_i
+FOOTER_SIZE = lines[1].to_i
 
 Spec::Runner.configure do |config|
 	config.include SpecHelper

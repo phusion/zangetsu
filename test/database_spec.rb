@@ -10,15 +10,19 @@ describe "Database" do
 			var database = new Database.Database('#{@dbpath}');
 			var CRC32    = require('zangetsu/crc32.js');
 			
-			function add(groupName, dayTimestamp, strOrBuffers, callback) {
+			function add(groupName, dayTimestamp, strOrBuffers, options, callback) {
 				var buffers;
 				if (typeof(strOrBuffers) == 'string') {
 					buffers  = [new Buffer(strOrBuffers)];
 				} else {
 					buffers = strOrBuffers;
 				}
+				if (typeof(options) == 'function') {
+					callback = options;
+					options = undefined;
+				}
 				var checksum = CRC32.toBuffer(buffers);
-				database.add(groupName, dayTimestamp, buffers, checksum,
+				database.add(groupName, dayTimestamp, buffers, checksum, options,
 					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
@@ -380,11 +384,11 @@ describe "Database" do
 			return eval_js!(%Q{
 				#{@header}
 				database.reload();
-				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, data) {
+				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, record) {
 					if (err) {
 						console.log("Error:", err.message);
 					} else {
-						console.log("Data:", data.toString('ascii'));
+						console.log("Data:", record.data.toString('ascii'));
 					}
 				});
 			})
@@ -444,23 +448,31 @@ describe "Database" do
 			output.should == "Error: Data file corrupted (invalid checksum in header)\n"
 		end
 
-		it "returns an error if the record has the corruption flag set" do
+		it "reads records that are marked as corrupted" do
 			eval_js!(%Q{
 				#{@header}
-				add('foo', 1, 'hello world')
+				add('foo', 1, 'hello', { corrupted: true })
 			})
-			File.open("#{@dbpath}/foo/1/data", "r+") do |f|
-				f.seek(8, IO::SEEK_SET)
-				f.write("\1")
-			end
 			output, error = eval_js!(%Q{
 				#{@header}
 				database.reload();
-				database.get('foo', 1, 0, function(err) {
-					console.log("Error: " + err.message);
+				database.get('foo', 1, 0, function(err, record) {
+					if (err) {
+						console.log("Error: " + err.message);
+					} else {
+						if (record.corrupted) {
+							console.log("Record corrupted");
+						}
+						console.log("data = %s", record.data.toString());
+						console.log("dataSize = %d, recordSize = %d",
+							record.dataSize, record.recordSize);
+					}
 				});
 			})
-			output.should == "Error: Record is marked as corrupted\n"
+			output.should ==
+				"Record corrupted\n" +
+				"data = hello\n" +
+				"dataSize = #{'hello'.size}, recordSize = #{HEADER_SIZE + 'hello'.size + FOOTER_SIZE}\n"
 		end
 	end
 	
@@ -513,7 +525,7 @@ describe "Database" do
 			
 		end
 		
-		it "iterates through all entries" do
+		it "iterates through all records" do
 			output, error = eval_js!(%Q{
 				#{@header}
 				
@@ -527,15 +539,15 @@ describe "Database" do
 				
 				function startTest() {
 					database.findTimeEntry('foo', 1).each(0,
-						function(err, buf, rawSize, continueReading, stop)
+						function(err, record)
 					{
 						if (err) {
 							console.log(err.message);
 							process.exit(1);
 						}
-						if (buf.length > 0) {
-							console.log("Entry:", buf.toString('ascii'));
-							continueReading();
+						if (!record.eof) {
+							console.log("Record:", record.data.toString('ascii'));
+							record.readNext();
 						} else {
 							console.log("EOF");
 						}
@@ -549,9 +561,9 @@ describe "Database" do
 				add('bar', 2, 'some text', added);
 			})
 			output.should ==
-				"Entry: hello\n" +
-				"Entry: world\n" +
-				"Entry: another entry\n" +
+				"Record: hello\n" +
+				"Record: world\n" +
+				"Record: another entry\n" +
 				"EOF\n"
 		end
 		
@@ -569,15 +581,15 @@ describe "Database" do
 				
 				function startTest() {
 					database.findTimeEntry('foo', 1).each(1,
-						function(err, buf, continueReading, stop)
+						function(err, record)
 					{
 						if (err) {
 							console.log(err.message);
 							process.exit(1);
 						}
-						if (buf.length > 0) {
-							console.log("Entry:", buf.toString('ascii'));
-							continueReading();
+						if (!record.eof) {
+							console.log("Record:", record.data.toString('ascii'));
+							record.readNext();
 						} else {
 							console.log("EOF");
 						}
@@ -591,6 +603,42 @@ describe "Database" do
 			status.should == 1
 			output.should == "Invalid offset or data file corrupted (invalid magic)\n"
 			error.should be_empty
+		end
+
+		it "skips over records that are marked as corrupted" do
+			eval_js!(%Q{
+				#{@header}
+				add('foo', 1, 'aaa');
+				add('foo', 1, 'bbb', { corrupted: true });
+				add('foo', 1, 'ccc');
+			})
+			output, error = eval_js!(%Q{
+				#{@header}
+				database.reload();
+				database.findTimeEntry('foo', 1).each(0,
+					function(err, record) {
+						if (err) {
+							console.log("Error:", err.message);
+						} else if (!record.eof) {
+							if (record.corrupted) {
+								console.log("Record: %s (corrupted)",
+									record.data.toString());
+							} else {
+								console.log("Record: %s",
+									record.data.toString());
+							}
+							record.readNext();
+						} else {
+							console.log("EOF");
+						}
+					}
+				);
+			})
+			output.should ==
+				"Record: aaa\n" +
+				"Record: bbb (corrupted)\n" +
+				"Record: ccc\n" +
+				"EOF\n"
 		end
 	end
 	

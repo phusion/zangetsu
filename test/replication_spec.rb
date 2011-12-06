@@ -22,15 +22,19 @@ describe "Replication" do
 
 			server.resultCheckThreshold = 1;
 			
-			function add(groupName, dayTimestamp, strOrBuffers, callback) {
+			function add(groupName, dayTimestamp, strOrBuffers, options, callback) {
 				var buffers;
 				if (typeof(strOrBuffers) == 'string') {
 					buffers  = [new Buffer(strOrBuffers)];
 				} else {
 					buffers = strOrBuffers;
 				}
+				if (typeof(options) == 'function') {
+					callback = options;
+					options = undefined;
+				}
 				var checksum = CRC32.toBuffer(buffers);
-				database.add(groupName, dayTimestamp, buffers, checksum,
+				database.add(groupName, dayTimestamp, buffers, checksum, options,
 					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
@@ -633,6 +637,82 @@ describe "Replication" do
 						}
 					}
 				)
+			end
+
+			it "correctly replicates records that are marked as corrupted" do
+				eval_js!(%Q{
+					#{@common_code}
+					add('foo', 1, 'aaa');
+					add('foo', 1, 'bbb', { corrupted: true });
+					add('foo', 1, 'ccc');
+				})
+
+				start_master
+				handshake
+				read_json.should == { 'command' => 'getToc' }
+				write_json({})
+				offset = 0
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'aaa'.size,
+					'opid' => 0
+				}
+				@connection.read('aaa'.size).should == 'aaa'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => offset
+						}
+					}
+				)
+				offset += @header_size + 'aaa'.size + @footer_size
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'bbb'.size,
+					'corrupted' => true,
+					'opid' => 0
+				}
+				@connection.read('bbb'.size).should == 'bbb'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => offset
+						}
+					}
+				)
+				offset += @header_size + 'bbb'.size + @footer_size
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'ccc'.size,
+					'opid' => 0
+				}
+				@connection.read('ccc'.size).should == 'ccc'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => offset
+						}
+					}
+				)
+				offset += @header_size + 'aaa'.size + @footer_size
 			end
 		end
 	end
