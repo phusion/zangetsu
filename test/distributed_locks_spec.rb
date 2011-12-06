@@ -55,13 +55,6 @@ describe "Distributed locks" do
 		end
 	end
 
-	# TODO possible issue:
-	#   since locks are acquired when new files are added, and new files get added
-	#   when new days start, all locks acquires will rougly be at the same time..
-	#
-	# TODO
-	#	Rekening houden met dat shardservers down kunnen gaan
-	#
 	# Design:
 	# When a file needs to be changed, a node requests the lock. It will
 	# do so by sending a lock request to all registered shard servers.
@@ -222,7 +215,125 @@ describe "Distributed locks" do
 			end
 		end
 
-		it "it should requery nodes after a while"
+		it "should save the lock time with the lock" do
+			@proc = async_eval_js %Q{
+					var ShardedDatabase = require('zangetsu/sharded_database');
+					var database = new ShardedDatabase.Database('tmp/config.json');
+					var otherServer = {
+						hostname: 'otherServer',
+						lock: function(key) {
+						},
+						priority: 1
+					}
+					var otherServer2 = {
+						hostname: 'otherServer2',
+						lock: function(key) {
+						},
+						priority: 2
+					}
+					database.shardServers.otherServer = otherServer;
+					database.shardServers.otherServer2 = otherServer2;
+					database.priority = 0;
+					database.lock("group", 1, function(){});
+					var currentTime = new Date().getTime();
+					console.log(database.lockTable["group/1"].time);
+					console.log(currentTime);
+			}
+			first, second = [false, false]
+			eventually do
+				first, second = @proc.output.split("\n").map(&:to_i)
+				first and second
+			end
+			first.should be_close(second, 10)
+		end
+
+	end
+
+	describe "monitorLocks" do
+		it "it should query shards for old locks" do
+			@proc = async_eval_js %Q{
+					var ShardedDatabase = require('zangetsu/sharded_database');
+					var database = new ShardedDatabase.Database('tmp/config.json');
+					var otherServer = {
+						hostname: 'otherServer',
+						listLocks: function(key) {
+							console.log('otherServer');
+						},
+						priority: 1
+					}
+					var otherServer2 = {
+						hostname: 'otherServer2',
+						listLocks: function(key) {
+							console.log('otherServer2');
+						},
+						priority: 2
+					}
+					database.shardServers.otherServer = otherServer;
+					database.shardServers.otherServer2 = otherServer2;
+					database.priority = 0;
+					var currentTime = new Date().getTime();
+					database.lockTable["group/1"] = {
+						hostname: 'otherServer',
+						time: currentTime - 30000
+					};
+					database.lockTable["group/2"] = {
+						hostname: 'otherServer',
+						time: currentTime
+					};
+					database.lockTable["group/3"] = {
+						hostname: 'otherServer',
+						time: currentTime - 20000
+					};
+					database.monitorLocks();
+			}
+			eventually do
+				@proc.output == "otherServer\n"
+			end
+		end
+
+		 it "should releaseLocks on given-up locks" do
+			@proc = async_eval_js %Q{
+					var ShardedDatabase = require('zangetsu/sharded_database');
+					var database = new ShardedDatabase.Database('tmp/config.json');
+					var otherServer = {
+						hostname: 'otherServer',
+						listLocks: function(callback) {
+							callback(["group/1"]);
+						},
+						priority: 1
+					}
+					var otherServer2 = {
+						hostname: 'otherServer2',
+						listLocks: function(callback) {
+							callback(["group/2"]);
+						},
+						priority: 2
+					}
+					database.shardServers.otherServer = otherServer;
+					database.shardServers.otherServer2 = otherServer2;
+					database.priority = 0;
+					var currentTime = new Date().getTime();
+					database.lockTable["group/1"] = {
+						hostname: 'otherServer',
+						time: currentTime - 30000
+					};
+					database.lockTable["group/2"] = {
+						hostname: 'otherServer2',
+						time: currentTime - 30000
+					};
+					database.lockTable["group/3"] = {
+						hostname: 'otherServer',
+						time: currentTime - 30000
+					};
+					database.releaseLock = function(group, key) {
+						console.log(group + '/' + key);
+					}
+					database.monitorLocks();
+			}
+			eventually do
+				@proc.output == "group/3\n"
+			end
+		 end
 	end
 
 	describe "receiveLock and unLock" do
