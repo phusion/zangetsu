@@ -7,20 +7,25 @@ describe "ShardServer" do
 	it "should be able to rebalance data after adding an external database"
 	it "should be able to remove an external database without losing data"
 
-	it_should_behave_like "A Zangetsu Server"
+	#it_should_behave_like "A Zangetsu Server"
 
-	before :each do
-		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
-		@server_socket.listen(50)
-		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
-		@code = %Q{
-			var ShardServer = require('zangetsu/shards').ShardServer;
-			var server = new ShardServer();
-			server.startWithFD(#{@server_socket.fileno});
-		}
-		@server = async_eval_js(@code, :capture => true)
-		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
-		@connection.sync = true
+	# before :each do
+	# 	@dbpath = 'tmp/db'
+	# 	FileUtils.mkdir_p(@dbpath)
+	# 	@code = %Q{
+	# 		var Server = require('zangetsu/shard_server').ShardServer;
+	# 		var server = new Server("tmp/db");
+	# 		server.start('127.0.0.1', #{TEST_SERVER_PORT}, "localhost");
+	# 	}
+	# 	@server = async_eval_js(@code, :capture => !DEBUG)
+	# 	@connection = wait_for_port(TEST_SERVER_PORT)
+	# end
+
+	after :each do
+		@connection.close if @connection
+		if @server && !@server.closed?
+			@server.close
+		end
 	end
 
 	def data_exist?(key, data)
