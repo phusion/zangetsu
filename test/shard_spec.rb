@@ -15,7 +15,7 @@ describe "Shard" do
 				var server = new Server("tmp/db");
 				server.startAsMasterWithFD(#{@server_socket.fileno});
 		}
-		@server = async_eval_js(@server_code, :capture => true)
+		@server = async_eval_js(@server_code, :capture => false)
 		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
 		@connection.sync = true
 	end
@@ -59,7 +59,7 @@ describe "Shard" do
 		end
 
 		it "should perform the handshake" do
-			@proc = async_eval_js @connect_code
+			@proc = async_eval_js @connect_code, :capture => false
 			eventually do
 				output = @proc.output
 				@proc.output == "connected\n"

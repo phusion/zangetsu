@@ -3,8 +3,11 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "ShardedDatabase" do
 	before :all do
-		Dir.mkdir 'tmp'
-		Dir.mkdir 'tmp/db'
+		begin
+			Dir.mkdir 'tmp'
+			Dir.mkdir 'tmp/db'
+		rescue
+		end
 		@dbpath = 'tmp/db'
 	end
 
@@ -76,7 +79,7 @@ describe "ShardedDatabase" do
 		before :all do
 			config = %Q{{ "shards" : [], "shardServers" : []}}
 			File.open('tmp/config.json', 'w') {|f| f.write(config) }
-			@output, @error = eval_js! %Q{
+			@proc = async_eval_js %Q{
 				var ShardedDatabase = require('zangetsu/sharded_database');
 				var database = new ShardedDatabase.Database('tmp/config.json');
 				var toc = {
@@ -103,14 +106,22 @@ describe "ShardedDatabase" do
 				console.log(database.toc.groups.a["2"].shard.hostname);
 				console.log(database.toc.groups.a["3"].shard.hostname);
 			}
-			File.delete('tmp/config.json')
 		end
+
+		after :all do
+			@proc.close if not @proc.closed?
+		end
+
 		it "should add a TOC from a shard to the shardserver" do
-			@output.lines.to_a[0].to_i.should == 3
+			eventually do
+				@proc.output.lines.to_a[0].to_i == 3
+			end
 		end
 		it "should associate the shard with every TOC entry" do
-			@output.lines.to_a[1].chomp.should == "shard1"
-			@output.lines.to_a[2].chomp.should == "shard2"
+			eventually do
+				@proc.output.lines.to_a[1].chomp == "shard1"
+				@proc.output.lines.to_a[2].chomp == "shard2"
+			end
 		end
 	end
 
@@ -129,7 +140,7 @@ describe "ShardedDatabase" do
 			it "should add/remove the server to its list of shardservers" do
 				config = %Q{{ "shards" : [], "shardServers" : []}}
 				File.open('tmp/config.json', 'w') {|f| f.write(config) }
-				@output, @error = eval_js! %Q{
+				@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					var server = {"hostname" : "aap", "port" : 1532};
@@ -138,7 +149,9 @@ describe "ShardedDatabase" do
 					database.removeShardServer(server);
 					console.log(database.shardServers["aap"]);
 				}
-				@output.should == "aap\nundefined\n"
+				eventually do
+					@proc.output == "aap\nundefined\n"
+				end
 				File.delete('tmp/config.json')
 			end
 		end
@@ -189,7 +202,7 @@ describe "ShardedDatabase" do
 
 		describe "shardsChanged & shardServersChanged" do
 			it "should add new shards and remove old ones" do
-				@output, @error = eval_js! %Q{
+				@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database').Database;
 					ShardedDatabase.prototype.oldAddShard = ShardedDatabase.prototype.addShard;
 					ShardedDatabase.prototype.addShard = function(description) {
@@ -207,11 +220,13 @@ describe "ShardedDatabase" do
 					database.configFile = "tmp/config_1.json";
 					database.configure();
 				}
-				@output.should == "add\nadd\nadd\nremove\n"
+				eventually do
+					@proc.output == "add\nadd\nadd\nremove\n"
+				end
 			end
 
 			it "should add new shardServers and remove old ones" do
-				@output, @error = eval_js! %Q{
+				@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database').Database;
 					ShardedDatabase.prototype.oldAddShardServer = ShardedDatabase.prototype.addShardServer;
 					ShardedDatabase.prototype.addShardServer = function(description) {
@@ -229,13 +244,15 @@ describe "ShardedDatabase" do
 					database.configFile = "tmp/config_1.json";
 					database.configure();
 				}
-				@output.should == "add\nadd\nadd\nremove\n"
+				eventually do
+					@proc.output == "add\nadd\nadd\nremove\n"
+				end
 			end
 		end
 
 		describe "configure" do
 			it "it should call shardsChanged iff the amount of shards changed" do
-				@output, @error = eval_js! %Q{
+				@proc = async_eval_js %Q{
 				var ShardedDatabase = require('zangetsu/sharded_database').Database;
 				ShardedDatabase.prototype.shardsChanged = function(shards) {
 					console.log('shardsChanged');
@@ -250,7 +267,9 @@ describe "ShardedDatabase" do
 				database.configFile = "tmp/config_2.json";
 				database.configure(); // should have changed
 				}
-				@output.should == "shardsChanged\nshardServersChanged\nshardsChanged\nshardServersChanged\n"
+				eventually do
+					@proc.output == "shardsChanged\nshardServersChanged\nshardsChanged\nshardServersChanged\n"
+				end
 			end
 		end
 	end
