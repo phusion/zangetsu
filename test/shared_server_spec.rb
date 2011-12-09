@@ -14,7 +14,7 @@ shared_examples_for "A Zangetsu Server" do
 	end
 
 	after :each do
-		@connection.close if @connection
+		@connection.close if @connection && !@connection.closed?
 		if @server && !@server.closed?
 			@server.close
 		end
@@ -114,7 +114,7 @@ shared_examples_for "A Zangetsu Server" do
 			@connection.write("hello")
 			response = read_json
 			response["status"].should == "error"
-			response["message"].should =~ /opid is already given/
+			response["message"].should =~ /opid is already used/
 		end
 	end
 	

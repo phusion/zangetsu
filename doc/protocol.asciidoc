@@ -1,0 +1,205 @@
+= Zangetsu protocol reference
+
+
+== Basics
+
+The Zangetsu protocol is for the most part a simple line-based protocol with one JSON object per line. Some parts (like the sending of payload data) are binary for efficiency reasons but in principle you can speak the entire protocol using telnet.
+
+In this document, `>` shall denote lines sent by the client, and `<` shall denote lines sent by the server. The code in the examples are wrapped for readability, but in the actual protocol each JSON object must reside on exactly 1 line.
+
+
+== Server and client roles
+
+Zangetsu supports master-slave replication. A master and all of its associated slaves together form what we call a _cluster_. Each Zangetsu server either has the _master_ role or the _slave_ role. A master can be read from and written to. It continuously sends replication commands to all slaves in the cluster. A slave can be read from but will refuse to be written to. It continuously receives replication commands from the master.
+
+From the perspective of a Zangetsu server, connecting clients can either be _regular clients_ or _replica slave clients_ (a Zangetsu slave server that's connecting to a master). For simplicity we shall refer to regular clients as just _clients_ and replica slave clients as just _slaves_.
+
+
+== Handshake
+
+Upon connecting to a Zangetsu server, the server sends a handshake message with the following fields:
+
+ * `protocolMajor` and `protocolMinor`: the protocol's version number.
+ * `serverName`: a human-readable string which contains the server's implementation name and version number.
+ * `host`: the server's public hostname.
+ * `port`: the port that the server's running on.
+ * `role`: the server's replication role, either `master` or `slave`.
+
+[source,javascript]
+----------------------
+< { "protocolMajor": 1, "protocolMinor": 0, "serverName": "Zangetsu/1.0",
+    "host": "mymachine.local", "port": 6420, "role": "master" }
+----------------------
+
+If the client does not support the server's protocol version then it disconnects immediately.
+
+Otherwise, it sends a reply that identifies its own role. The reply contains just one field, `role`. It's either set to `replica-slave` or to `client`.
+
+[source,javascript]
+----------------------
+// Identifies client as replica slave.
+> { "role": "replica-slave" }
+
+// Identifies client as regular client.
+> { "role": "client" }
+----------------------
+
+The server then either approves the handshake or denies it by sending a <<status-reply,status reply>>. If the handshake denies the handshake then it always closes the connection.
+
+[source,javascript]
+----------------------
+// Handshake approved.
+< { "status": "ok" }
+
+// Handshake denied.
+< { "status": "error", "message": "We're not open on Friday the 13th!", "disconnect": true }
+----------------------
+
+
+== Commands
+
+After a successful handshake, the client can send commands to the server. This section documents all supported commands. The situation with slaves that connect to the master is backwards: the master sends commands to the slave, which the slave has to process. The slave does not send any commands to the master.
+
+All commands contain a `command` field which identifies the command. The server sends a <<status-reply,status reply>> in response to most commands.
+
+=== add
+
+Synopsis:
+
+[source,javascript]
+----------------------
+{ "command": "add",
+  "group": string,
+  "timestamp": integer,
+  "size": integer,
+  "opid": string_or_integer,
+
+  // Optional fields:
+  "corrupted": boolean
+}
+// ...followed by 'size' bytes of arbitrary binary data...
+----------------------
+
+Stores some data into the data file associated with the given group and timestamp. `size` indicates the size of the data that you want to store, in bytes. `corrupted` sets the corruption flag on the record; it is used internally by the replication implementation and should not be set by clients.
+
+This command _must_ be followed by `size` bytes of data, which is the data you want to store. That is, this data comes right after the newline (`\n`) that comes after the JSON. Here's an example of an `add` command in C string format. It stores the data `HELLO WORLD`.
+
+----------------------
+"{ \"command\": \"add\", \"size\": 11, ... }\nHELLO WORLD"
+----------------------
+
+Note that unlike most commands, this command work _asynchronously_. This means that the server only performs some basic error checking (e.g. checking whether you've set all mandatory fields) upon receiving this command. If the basic error checking fails then it will send an error reply with `disconnect` set to true, and it will close the connection. Otherwise, the operation is moved into the background and no status reply is sent. The server then becomes immediately ready for processing further commands.
+
+One must fetch the result of an `add` command by issuing a `results` command, which waits until all `add` commands are finished and reports their results. The `opid` field is used for uniquely identifying an `add` command and may be any string or integer as long as it's unique since the last `results` command. This allows performing bulk adds with a minimum amount of network roundtrips. Send multiple `add` commands fetch all their results with a single `results` command. Examples:
+
+[source,javascript]
+----------------------
+> { "command": "add", "opid": "foo", ... }
+> // ...followed by some data...
+> { "command": "add", "opid": "bar", ... }
+> // ...followed by some data...
+> { "command": "results" }
+< { "status": "ok", "results": {
+       "foo": { "status": "ok", "offset": 1234 },
+       "bar": { "status": "ok", "offset": 5678 }
+  } }
+> // The last results command wipes all results from its memory,
+> // so invoking another results command now won't return any results.
+> { "command": "results" }
+< { "status": "ok", "results": {} }
+----------------------
+
+Opids must be unique since the last invocation of the `results` command, or (if no `results` command has been invoked so far) unique since the server started.
+
+[source,javascript]
+----------------------
+> { "command": "add", "opid": "foo", ... }
+> // ...some data...
+> { "command": "add", "opid": "foo", ... }
+< { "status": "error", "message": "The given opid is already used", "disconnect": true }
+----------------------
+
+[source,javascript]
+----------------------
+> { "command": "add", "opid": "foo", ... }
+> // ...followed by some data...
+> // Invoking a results command here clears the 'foo' opid so that it may be used again.
+> { "command": "results" }
+< { "status": "ok", ... }
+> // The 'foo' opid is once again usable.
+> { "command": "add", "opid": "foo", ... }
+----------------------
+
+
+=== results
+
+Synopsis:
+
+[source,javascript]
+----------------------
+{ "command": "results" }
+{ "command": "results", "discard": true }
+----------------------
+
+=== get
+
+?
+
+=== remove
+
+?
+
+=== removeOne
+
+?
+
+=== getToc
+
+Synopsis:
+
+[source,javascript]
+----------------------
+{ "command": "getToc" }
+----------------------
+
+=== ping
+
+Synopsis:
+
+[source,javascript]
+----------------------
+{ "command": "ping" }
+{ "command": "ping", "sleep": milliseconds }
+----------------------
+
+Pings the server. The server sends a <<status-reply,status reply>>.
+
+The second form instructs the server to sleep for the given amount of milliseconds before sending the status reply. While sleeping, the server does not process any further commands sent through the current connection, but it still processes commands sent through other connections.
+
+
+[[status-reply]]
+== Status replies
+
+The server sends a status reply for most Zangetsu commands. A status reply is a JSON object with a `status` field which is either ``ok'' (indicating success) or ``error'' (indicating an error). Error status replies may be accompanied by an error message, stored in the `message` field.
+
+Normally, the connection is not closed after encountering an error. But if the server deems the error grave enough to disconnect the client, then it sets the `disconnect` field to `true` and closes the connection.
+
+[source,javascript]
+----------------------
+# Success.
+< { "status": "ok" }
+
+# Error without error message.
+< { "status": "error" }
+
+# Error with error message.
+< { "status": "error", "message": "You forgot to set an argument!" }
+
+# Grave error. After reading this message you will be sure that the connection is closed.
+< { "status": "error", "message": "Harddisk on fire, shutting down!", "disconnect": true }
+----------------------
+
+
+== Asynchronous errors
+
+?

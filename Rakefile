@@ -10,11 +10,11 @@ end
 
 task :native_support => ['lib/zangetsu/native_support.node']
 
-file 'lib/zangetsu/native_support.node' => 'ext/build/default/native_support.node' do
-	sh "ln -sf ../../ext/build/default/native_support.node lib/zangetsu/native_support.node"
+file 'lib/zangetsu/native_support.node' => 'ext/build/Release/native_support.node' do
+	sh "ln -sf ../../ext/build/Release/native_support.node lib/zangetsu/native_support.node"
 end
 
-file 'ext/build/default/native_support.node' => ['ext/native_support.cpp', 'ext/build'] do
+file 'ext/build/Release/native_support.node' => ['ext/native_support.cpp', 'ext/build'] do
 	sh "cd ext && node-waf build"
 end
 

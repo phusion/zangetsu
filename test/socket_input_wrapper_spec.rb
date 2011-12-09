@@ -27,6 +27,7 @@ describe "SocketInputWrapper" do
 			DummySocket.prototype.destroy = function() {
 				this.fd = null;
 				this.destroyed = true;
+				this.emit('close');
 			}
 			
 			var socket  = new DummySocket();
@@ -45,7 +46,189 @@ describe "SocketInputWrapper" do
 		})
 		output.should == "Data: aaabbb\n"
 	end
-	
+
+	it "emits socket end events" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onEnd = function() {
+				console.log('End');
+			}
+			socket.emit('end');
+		})
+		output.should == "End\n"
+	end
+
+	it "emits socket end events after all data has been consumed" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				return data.length;
+			}
+			wrapper.onEnd = function() {
+				console.log('End');
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+			socket.emit('end');
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"End\n"
+	end
+
+	it "emits socket error events" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onError = function(msg) {
+				console.log('Error:', msg);
+			}
+			socket.emit('error', 'foo');
+		})
+		output.should == "Error: foo\n"
+	end
+
+	it "emits socket error events after all data has been consumed" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				return data.length;
+			}
+			wrapper.onError = function(msg) {
+				console.log('Error:', msg);
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+			socket.emit('error', 'foo');
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"Error: foo\n"
+	end
+
+	specify "if the onData callback consumes everything and pauses the wrapper, then " +
+	        "the wrapper leaves the socket in the paused state" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				wrapper.pause();
+				process.nextTick(function() {
+					console.log("Paused: " + wrapper.paused);
+					console.log("Socket paused: " + socket.paused);
+				});
+				return 3;
+			}
+			socket.emit('data', new Buffer('abc'));
+		})
+		output.should ==
+			"Paused: true\n" +
+			"Socket paused: true\n"
+	end
+
+	specify "if the onData callback consumes everything and resumes the wrapper, then " +
+	        "the wrapper leaves the socket in the resumed state" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				wrapper.resume();
+				process.nextTick(function() {
+					console.log("Paused: " + wrapper.paused);
+					console.log("Socket paused: " + socket.paused);
+				});
+				return 3;
+			}
+			socket.emit('data', new Buffer('abc'));
+		})
+		output.should ==
+			"Paused: false\n" +
+			"Socket paused: false\n"
+	end
+
+	specify "if the onData callback consumes partially and pauses the wrapper, then " +
+	        "the wrapper leaves the socket at the paused state" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				wrapper.pause();
+				process.nextTick(function() {
+					console.log("Paused: " + wrapper.paused);
+					console.log("Socket paused: " + socket.paused);
+				});
+				return 1;
+			}
+			socket.emit('data', new Buffer('abc'));
+		})
+		output.should ==
+			"Paused: true\n" +
+			"Socket paused: true\n"
+	end
+
+	specify "if the onData callback consumes partially and resumes the wrapper, then " +
+	        "the wrapper leaves the socket at the resumed state" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			wrapper.onData = function(data) {
+				wrapper.resume();
+				process.nextTick(function() {
+					console.log("Paused: " + wrapper.paused);
+					console.log("Socket paused: " + socket.paused);
+				});
+				return 1;
+			}
+			socket.emit('data', new Buffer('ab'));
+		})
+		output.should ==
+			"Paused: false\n" +
+			"Socket paused: true\n" +
+			"Paused: false\n" +
+			"Socket paused: false\n"
+	end
+
+	specify "if the onData callback first consumes partially, then consumes everything " +
+	        "and pauses the wrapper, then the wrapper leaves the socket in the paused state" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			var counter = 0;
+			wrapper.onData = function(data) {
+				counter++;
+				if (counter == 2) {
+					wrapper.pause();
+					process.nextTick(function() {
+						console.log("Paused: " + wrapper.paused);
+						console.log("Socket paused: " + socket.paused);
+					});
+				}
+				return 2;
+			}
+			socket.emit('data', new Buffer('aabb'));
+		})
+		output.should ==
+			"Paused: true\n" +
+			"Socket paused: true\n"
+	end
+
+	specify "if the onData callback first consumes partially, then consumes everything " +
+	        "and resumes the wrapper, then the wrapper leaves the socket in the resumed state" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			var counter = 0;
+			wrapper.onData = function(data) {
+				counter++;
+				if (counter == 2) {
+					wrapper.resume();
+					process.nextTick(function() {
+						console.log("Paused: " + wrapper.paused);
+						console.log("Socket paused: " + socket.paused);
+					});
+				}
+				return 2;
+			}
+			socket.emit('data', new Buffer('aabb'));
+		})
+		output.should ==
+			"Paused: false\n" +
+			"Socket paused: false\n"
+	end
+
 	describe "if the onData callback didn't consume everything" do
 		it "pauses the socket, re-emits the remaining data in the next tick, " +
 		   "then resumes the socket when everything is consumed" do
@@ -80,9 +263,9 @@ describe "SocketInputWrapper" do
 				"Data: b\n" +
 				"Finished; paused: false\n"
 		end
-		
-		describe "if pause() is called after the handler" do
-			it "pauses the socket and doesn't re-emit remaining data" do
+
+		describe "if pause() is called after the data handler" do
+			it "pauses the socket and doesn't re-emit remaining data events" do
 				output, error = eval_js!(%Q{
 					#{@header}
 					wrapper.onData = function(data) {
@@ -266,7 +449,7 @@ describe "SocketInputWrapper" do
 			"Data: bb\n" +
 			"Data: b\n"
 	end
-	
+
 	it "stops emitting unconsumed data once the socket is closed" do
 		output, error = eval_js!(%Q{
 			#{@header}
@@ -286,5 +469,24 @@ describe "SocketInputWrapper" do
 		output.should ==
 			"Data: aaabbb\n" +
 			"Data: abbb\n"
+	end
+
+	it "emits a 'close' event if the underlying socket is closed" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			var counter = 0;
+			wrapper.onClose = function() {
+				console.log('Closed');
+			}
+			wrapper.onData = function(data) {
+				console.log('Data:', data.toString('ascii'));
+				socket.destroy();
+				return 2;
+			}
+			socket.emit('data', new Buffer('aaabbb'));
+		})
+		output.should ==
+			"Data: aaabbb\n" +
+			"Closed\n"
 	end
 end

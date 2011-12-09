@@ -14,22 +14,27 @@ describe "Replication" do
 		
 		@dbpath = 'tmp/db'
 		@common_code = %Q{
-			var sys      = require('sys');
 			var Server   = require('zangetsu/server');
 			var server   = new Server.Server('#{@dbpath}');
 			var Database = require('zangetsu/database');
 			var database = server.database;
 			var CRC32    = require('zangetsu/crc32.js');
+
+			server.resultCheckThreshold = 1;
 			
-			function add(groupName, dayTimestamp, strOrBuffers, callback) {
+			function add(groupName, dayTimestamp, strOrBuffers, options, callback) {
 				var buffers;
 				if (typeof(strOrBuffers) == 'string') {
 					buffers  = [new Buffer(strOrBuffers)];
 				} else {
 					buffers = strOrBuffers;
 				}
+				if (typeof(options) == 'function') {
+					callback = options;
+					options = undefined;
+				}
 				var checksum = CRC32.toBuffer(buffers);
-				database.add(groupName, dayTimestamp, buffers, checksum,
+				database.add(groupName, dayTimestamp, buffers, checksum, options,
 					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
@@ -45,25 +50,20 @@ describe "Replication" do
 	
 	before :each do
 		FileUtils.mkdir_p(@dbpath)
-		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
-		@server_socket.listen(50)
-		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 	end
 	
 	after :each do
 		@connection.close if @connection
 		@connection2.close if @connection2
+		@connection3.close if @connection3
 		if @server && !@server.closed?
 			sleep 0.1 if DEBUG
 			@server.close
 		end
-		@server_socket.close if @server_socket
 	end
 	
 	def connect_to_server(port = TEST_SERVER_PORT)
-		socket = TCPSocket.new('127.0.0.1', port)
-		socket.sync = true
-		return socket
+		return wait_for_port(port)
 	end
 	
 	context "master server" do
@@ -71,7 +71,7 @@ describe "Replication" do
 			def start_master
 				@code = %Q{
 					#{@common_code}
-					server.startAsMasterWithFD(#{@server_socket.fileno});
+					server.startAsMaster('127.0.0.1', #{TEST_SERVER_PORT});
 				}
 				@server = async_eval_js(@code, :capture => !DEBUG)
 				@connection = connect_to_server
@@ -95,7 +95,7 @@ describe "Replication" do
 			it "synchronizes the joining server" do
 				eval_js!(%Q{
 					#{@common_code}
-					
+
 					add('baz', 2, 'hello');
 					add('baz', 2, 'world');
 					add('baz', 4, 'this is a sentence');
@@ -104,7 +104,7 @@ describe "Replication" do
 					
 					add('test', 5, 'test data');
 					add('test', 5, 'more test data');
-				})
+				}, :capture => false)
 				FileUtils.mkdir_p("#{@dbpath}/test/3")
 				FileUtils.mkdir_p("#{@dbpath}/test/4")
 				
@@ -123,7 +123,7 @@ describe "Replication" do
 					add('baz', 3, 'xxx');
 					add('baz', 5, 'xxxxxxxxxxx');
 					add('baz', 6, 'xxx');
-				})
+				}, :capture => false)
 				
 				slave_toc = {
 					# Doesn't exist on the master
@@ -179,7 +179,7 @@ describe "Replication" do
 						command['data'] = @connection.read(command['size'])
 						commands << command
 						read_json.should == { 'command' => 'results' }
-						write_json(:status => 'ok', :results => { 1 => 0 })
+						write_json(:status => 'ok', :results => { 0 => { :status => 'ok' } })
 					else
 						commands << command
 						write_json(:status => 'ok')
@@ -194,19 +194,19 @@ describe "Replication" do
 				commands.should include('command' => 'removeOne',
 					'group' => 'baz', 'dayTimestamp' => 5)
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'timestamp' => 2 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 2 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 5, 'data' => 'world')
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'timestamp' => 4 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 4 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 18, 'data' => 'this is a sentence')
 				commands.should include('command' => 'add',
-					'group' => 'baz', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'baz', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 5, 'data' => 'xxxxx')
 				commands.should include('command' => 'add',
-					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 9, 'data' => 'test data')
 				commands.should include('command' => 'add',
-					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 1,
+					'group' => 'test', 'timestamp' => 5 * 24 * 60 * 60, 'opid' => 0,
 					'size' => 14, 'data' => 'more test data')
 				
 				read_json.should == { 'command' => 'ping' }
@@ -215,22 +215,140 @@ describe "Replication" do
 				should_never_happen { socket_readable?(@connection) }
 			end
 			
-			it "doesn't send removal commands if there's nothing to prune" do
-				pending
-			end
-			
-			it "doesn't send add commands if there's nothing to fill" do
-				pending
-			end
-			
-			specify "if anything was removed from the database while synchronization " +
-				"is in progress then those concurrent removals won't be missed" do
-				pending
-			end
-			
-			specify "if anything was written to the database while synchronization " +
-				"is in progress then those concurrent adds won't be missed" do
-				pending
+			specify "if anything was written or removed from the database while synchronization " +
+			        "is in progress then those concurrent modifications won't be missed" do
+				eval_js!(%Q{
+					#{@common_code}
+					add('foo', 1, 'foo1')
+					add('foo', 2, 'foo2')
+					add('foo', 3, 'foo3')
+				})
+
+				start_master
+
+				# Slave joins master
+				@replica = @connection
+				handshake(@replica)
+				read_json(@replica).should == { 'command' => 'getToc' }
+				write_json(@replica, {})
+
+				# Normal client connects to master
+				@client = @connection2 = connect_to_server
+				handshake(@client, {})
+				
+
+				# Now, back to the replica...
+
+				# Expecting 'foo1' record from master.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => "foo1".size,
+					'opid' => 0
+				}
+				@replica.read('foo1'.size).should == 'foo1'
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				# Expecting 'foo2' record from master.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => "foo2".size,
+					'opid' => 0
+				}
+				@replica.read('foo2'.size).should == 'foo2'
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				# Expecting 'foo3' record from master.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 72 * 60 * 60,
+					'size' => "foo3".size,
+					'opid' => 0
+				}
+				@replica.read('foo3'.size).should == 'foo3'
+
+				# Before acknowledging this replication command, modify foo/2
+				# and remove foo/1.
+				write_json(@client,
+					:command => 'add',
+					:group => 'foo',
+					:timestamp => 48 * 60 * 60 + 1,
+					:size => 'hi'.size,
+					:opid => 0)
+				@client.write('hi')
+				write_json(@client,
+					:command => 'remove',
+					:group => 'foo',
+					:timestamp => 48 * 60 * 60)
+				read_json(@client).should == { 'status' => 'ok' }
+				write_json(@client, :command => 'results')
+				read_json(@client)['status'].should == 'ok'
+
+				# Now acknowledge the last replication command.
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				# Expecting removal of foo/1.
+				read_json(@replica).should == {
+					'command' => 'removeOne',
+					'group' => 'foo',
+					'dayTimestamp' => 1
+				}
+				write_json(@replica, :status => 'ok')
+
+				# Expecting foo/2 'hi' record.
+				read_json(@replica).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => "hi".size,
+					'opid' => 0
+				}
+				@replica.read('hi'.size).should == 'hi'
+				read_json(@replica).should == { 'command' => 'results' }
+				write_json(@replica,
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => @header_size + 'foo2'.size + @footer_size
+						}
+					}
+				)
+
+				read_json(@replica).should == { 'command' => 'ping' }
+				write_json(@replica, :status => 'ok')
+				should_never_happen { socket_readable?(@replica) }
 			end
 			
 			it "sends the topology after synchronization finishes"
@@ -259,6 +377,9 @@ describe "Replication" do
 				@connection2 = connect_to_server
 				handshake(@connection2, {})
 				
+
+				# Let's command the master to do a few things
+
 				# Adds to foo/2
 				write_json(@connection2,
 					:command => 'add',
@@ -285,6 +406,52 @@ describe "Replication" do
 					:size => "xxx".size,
 					:opid => 3)
 				@connection2.write("xxx")
+
+
+				# The slave should receive the same commands in the same order
+
+				# Replication command for adding to add/2
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => "hello".size,
+					'opid' => 0
+				}
+				@connection.read("hello".size).should == "hello"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+
+				# Replication command for adding to foo/1
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => "world".size,
+					'opid' => 0
+				}
+				@connection.read("world".size).should == "world"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+
+				# Replication command for adding to foo/3
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 72 * 60 * 60,
+					'size' => "xxx".size,
+					'opid' => 0
+				}
+				@connection.read("xxx".size).should == "xxx"
+				read_json.should == { 'command' => 'results' }
+				write_json(:status => 'ok')
+
+
+				# Now back to the master...
+
+				# Wait until add commands on the master are done
+				write_json(@connection2, :command => 'results')
+				read_json(@connection2)['status'].should == 'ok'
 				
 				# Removes foo/1 and foo/2
 				write_json(@connection2,
@@ -293,40 +460,7 @@ describe "Replication" do
 					:timestamp => 72 * 60 * 60)
 				read_json(@connection2)['status'].should == 'ok'
 				
-				write_json(@connection2, :command => 'results')
-				read_json(@connection2)['status'].should == 'ok'
-				
-				# We expect all commands to be replicated in the same order
-				
-				read_json.should == {
-					'command' => 'add',
-					'group' => 'foo',
-					'dayTimestamp' => 2,
-					'size' => "hello".size
-				}
-				@connection.read("hello".size).should == "hello"
-				read_json.should == { 'command' => 'results' }
-				write_json(:status => 'ok')
-				
-				read_json.should == {
-					'command' => 'add',
-					'group' => 'foo',
-					'dayTimestamp' => 1,
-					'size' => "world".size
-				}
-				@connection.read("world".size).should == "world"
-				read_json.should == { 'command' => 'results' }
-				write_json(:status => 'ok')
-				
-				read_json.should == {
-					'command' => 'add',
-					'group' => 'foo',
-					'dayTimestamp' => 3,
-					'size' => "xxx".size
-				}
-				@connection.read("xxx".size).should == "xxx"
-				read_json.should == { 'command' => 'results' }
-				write_json(:status => 'ok')
+				# The removal command should have been replicaed
 				
 				read_json.should == {
 					'command' => 'removeOne',
@@ -345,7 +479,241 @@ describe "Replication" do
 				should_never_happen { socket_readable?(@connection) }
 			end
 			
-			specify "it refills a time entry if filling fails because the slave time entry size is incorrect"
+			specify "an add operation only completes after it has been replicated to all slaves" do
+				FileUtils.mkdir_p("#{@dbpath}/foo/2")
+				File.open("#{@dbpath}/foo/2/data", "w") do |f|
+					f.write("xxxxx")
+				end
+				start_master
+				
+				# Replica member 1 joins master
+				@replica1 = @connection
+				handshake(@replica1)
+				read_json(@replica1).should == { 'command' => 'getToc' }
+				write_json(@replica1,
+					:foo => {
+						2 => {
+							:size => 5
+						}
+					}
+				)
+				read_json(@replica1).should == { 'command' => 'ping' }
+				write_json(@replica1, :status => 'ok')
+				
+				# Replica member 2 joins master
+				@replica2 = @connection2 = connect_to_server
+				handshake(@replica2)
+				read_json(@replica2).should == { 'command' => 'getToc' }
+				write_json(@replica2,
+					:foo => {
+						2 => {
+							:size => 5
+						}
+					}
+				)
+				read_json(@replica2).should == { 'command' => 'ping' }
+				write_json(@replica2, :status => 'ok')
+
+				# Regular client connects to master
+				@client = @connection3 = connect_to_server
+				handshake(@client, {})
+
+
+				# Tell master to add to foo/2
+				data = 'hello'
+				write_json(@client,
+					:command => 'add',
+					:group => 'foo',
+					:timestamp => 48 * 60 * 60,
+					:size => data.size,
+					:opid => 1)
+				@client.write(data)
+
+				# Master should not respond to 'results' command yet
+				# because no slave has accepted the data yet.
+				write_json(@client, :command => 'results')
+				should_never_happen { socket_readable?(@client) }
+
+				# Slave 1 now accepts the data, but master still doesn't
+				# respond to 'results' yet.
+				read_json(@replica1).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => data.size,
+					'opid' => 0
+				}
+				@replica1.read(data.size).should == data
+				read_json(@replica1).should == { 'command' => 'results' }
+				write_json(@replica1, :status => 'ok')
+				should_never_happen { socket_readable?(@client) }
+				
+				# Slave 2 now accepts the data. Master now responds to
+				# 'results' command.
+				read_json(@replica2).should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 48 * 60 * 60,
+					'size' => data.size,
+					'opid' => 0
+				}
+				@replica2.read(data.size).should == data
+				read_json(@replica2).should == { 'command' => 'results' }
+				write_json(@replica2, :status => 'ok')
+				read_json(@client).should == {
+					'status' => 'ok',
+					'results' => {
+						'1' => {
+							'status' => 'ok',
+							'offset' => 5
+						}
+					}
+				}
+			end
+
+			it "refills a time entry if filling fails because the slave time entry data file is corrupted" do
+				# If the data file in the slave time entry is truncated, then
+				# the master's attempt to stream from slaveTimeEntry.size will fail.
+				# In that case the entire time entry should be refilled.
+				
+				eval_js!(%Q{
+					#{@common_code}
+					add('foo', 1, 'hello');
+					add('foo', 1, 'world');
+				})
+
+				start_master
+				handshake
+				read_json.should == { 'command' => 'getToc' }
+				write_json({
+					:foo => {
+						1 => {
+							:size => @header_size
+						}
+					}
+				})
+				
+				read_json.should == {
+					'command' => 'removeOne',
+					'group' => 'foo',
+					'dayTimestamp' => 1
+				}
+				write_json(:status => 'ok')
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'hello'.size,
+					'opid' => 0
+				}
+				@connection.read('hello'.size).should == 'hello'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => 0
+						}
+					}
+				)
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'world'.size,
+					'opid' => 0
+				}
+				@connection.read('world'.size).should == 'world'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => @header_size + 'hello'.size + @footer_size
+						}
+					}
+				)
+			end
+
+			it "correctly replicates records that are marked as corrupted" do
+				eval_js!(%Q{
+					#{@common_code}
+					add('foo', 1, 'aaa');
+					add('foo', 1, 'bbb', { corrupted: true });
+					add('foo', 1, 'ccc');
+				})
+
+				start_master
+				handshake
+				read_json.should == { 'command' => 'getToc' }
+				write_json({})
+				offset = 0
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'aaa'.size,
+					'opid' => 0
+				}
+				@connection.read('aaa'.size).should == 'aaa'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => offset
+						}
+					}
+				)
+				offset += @header_size + 'aaa'.size + @footer_size
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'bbb'.size,
+					'corrupted' => true,
+					'opid' => 0
+				}
+				@connection.read('bbb'.size).should == 'bbb'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => offset
+						}
+					}
+				)
+				offset += @header_size + 'bbb'.size + @footer_size
+
+				read_json.should == {
+					'command' => 'add',
+					'group' => 'foo',
+					'timestamp' => 24 * 60 * 60,
+					'size' => 'ccc'.size,
+					'opid' => 0
+				}
+				@connection.read('ccc'.size).should == 'ccc'
+				read_json.should == { 'command' => 'results' }
+				write_json(
+					:status => 'ok',
+					:results => {
+						0 => {
+							:status => 'ok',
+							:offset => offset
+						}
+					}
+				)
+				offset += @header_size + 'aaa'.size + @footer_size
+			end
 		end
 	end
 	
@@ -365,8 +733,7 @@ describe "Replication" do
 			def start_slave
 				@code = %Q{
 					#{@common_code}
-					server.startAsSlaveWithFD(#{@server_socket.fileno},
-						undefined, '127.0.0.1', #{TEST_SERVER_PORT2});
+					server.startAsSlave('127.0.0.1', #{TEST_SERVER_PORT2})
 				}
 				@server = async_eval_js(@code, :capture => !DEBUG)
 				Timeout.timeout(3, RuntimeError) do
@@ -393,5 +760,5 @@ describe "Replication" do
 				handshake
 			end
 		end
-	end
+	end if false
 end

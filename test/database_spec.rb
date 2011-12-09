@@ -5,20 +5,24 @@ describe "Database" do
 	before :each do
 		@dbpath = 'tmp/db'
 		@header = %Q{
-			var sys      = require('sys');
+			var util     = require('util');
 			var Database = require('zangetsu/database');
 			var database = new Database.Database('#{@dbpath}');
 			var CRC32    = require('zangetsu/crc32.js');
 			
-			function add(groupName, dayTimestamp, strOrBuffers, callback) {
+			function add(groupName, dayTimestamp, strOrBuffers, options, callback) {
 				var buffers;
 				if (typeof(strOrBuffers) == 'string') {
 					buffers  = [new Buffer(strOrBuffers)];
 				} else {
 					buffers = strOrBuffers;
 				}
+				if (typeof(options) == 'function') {
+					callback = options;
+					options = undefined;
+				}
 				var checksum = CRC32.toBuffer(buffers);
-				database.add(groupName, dayTimestamp, buffers, checksum,
+				database.add(groupName, dayTimestamp, buffers, checksum, options,
 					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
@@ -36,15 +40,15 @@ describe "Database" do
 		before :each do
 			@code = @header + %q{
 				database.reload();
-				sys.print(database.groupCount, " groups\n");
+				util.print(database.groupCount, " groups\n");
 				var groupName, group, timeEntryName, timeEntry;
 				for (groupName in database.groups) {
 					group = database.groups[groupName];
-					sys.print("Group ", groupName, ": ",
+					util.print("Group ", groupName, ": ",
 						group.timeEntryCount, " time entries\n");
 					for (timeEntryName in group.timeEntries) {
 						timeEntry = group.timeEntries[timeEntryName];
-						sys.print("Time entry ", groupName, "/",
+						util.print("Time entry ", groupName, "/",
 							timeEntryName, ": size=",
 							timeEntry.dataFileSize, "\n");
 					}
@@ -80,7 +84,7 @@ describe "Database" do
 	
 		it "generates an error if the database directory does not exist" do
 			status, output, error = eval_js(@code)
-			error.should include("No such file or directory '#{@dbpath}'")
+			error.should include("no such file or directory '#{@dbpath}'")
 			error.should include("ENOENT")
 		end
 	
@@ -88,7 +92,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo")
 			File.chmod(0300, @dbpath)
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}'")
+			error.should include("permission denied '#{@dbpath}'")
 			error.should include("EACCES")
 		end
 	
@@ -96,7 +100,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo")
 			File.chmod(0600, @dbpath)
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo'")
+			error.should include("permission denied '#{@dbpath}/foo'")
 			error.should include("EACCES")
 		end
 	
@@ -104,7 +108,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0300, @dbpath + "/foo")
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo'")
+			error.should include("permission denied '#{@dbpath}/foo'")
 			error.should include("EACCES")
 		end
 	
@@ -112,7 +116,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0600, @dbpath + "/foo")
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo/123'")
+			error.should include("permission denied '#{@dbpath}/foo/123'")
 			error.should include("EACCES")
 		end
 	
@@ -126,7 +130,7 @@ describe "Database" do
 			FileUtils.mkdir_p(@dbpath + "/foo/123")
 			File.chmod(0600, @dbpath + "/foo/123")
 			status, output, error = eval_js(@code)
-			error.should include("Permission denied '#{@dbpath}/foo/123/data'")
+			error.should include("permission denied '#{@dbpath}/foo/123/data'")
 			error.should include("EACCES")
 		end
 		
@@ -191,11 +195,11 @@ describe "Database" do
 			output, error = eval_js!(@header + %q{
 				database.reload();
 				database._findOrCreateGroup('foo');
-				sys.print("Created\n");
+				util.print("Created\n");
 				database._findOrCreateGroup('foo');
-				sys.print("Created\n");
+				util.print("Created\n");
 				database._findOrCreateGroup('foo');
-				sys.print("Created\n");
+				util.print("Created\n");
 			})
 			File.directory?(@dbpath + "/foo").should be_true
 			count_line(output, "Created").should == 3
@@ -305,10 +309,14 @@ describe "Database" do
 				"ZaET" +
 				# Length
 				["hello world".size].pack('N') +
+				# Flags
+				"\0" +
 				# Data
 				"hello world" +
 				# Checksum
 				"\x00\x00\x0d\x4a" +
+				# Reserved
+				"\0\0\0\0\0\0\0\0" +
 				# Length
 				["hello world".size].pack('N') +
 				# Footer magic
@@ -345,17 +353,17 @@ describe "Database" do
 					database.findTimeEntry('foo', 123).writtenSize);
 			})
 			output.should ==
-				"DataFileSize 31\n" +
+				"DataFileSize 40\n" +
 				"WrittenSize 0\n" +
 				
 				"Added at 0\n" +
-				"WrittenSize 31\n" +
-				"DataFileSize 62\n" +
-				"WrittenSize 31\n" +
+				"WrittenSize 40\n" +
+				"DataFileSize 80\n" +
+				"WrittenSize 40\n" +
 				
-				"Added at 31\n" +
-				"DataFileSize 62\n" +
-				"WrittenSize 62\n"
+				"Added at 40\n" +
+				"DataFileSize 80\n" +
+				"WrittenSize 80\n"
 		end
 	end
 	
@@ -376,11 +384,11 @@ describe "Database" do
 			return eval_js!(%Q{
 				#{@header}
 				database.reload();
-				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, data) {
+				database.get("#{group}", #{day_timestamp}, #{offset}, function(err, record) {
 					if (err) {
-						console.log("Error:", err);
+						console.log("Error:", err.message);
 					} else {
-						console.log("Data:", data.toString('ascii'));
+						console.log("Data:", record.data.toString('ascii'));
 					}
 				});
 			})
@@ -389,39 +397,39 @@ describe "Database" do
 		it "works" do
 			eval_js!(@add_code)
 			output = eval_js!(@add_code).first
-			offset = 4 + 4 + 'hello world'.size + 4 + 4 + 4
+			offset = 4 + 4 + 1 + 'hello world'.size + 4 + 8 + 4 + 4
 			output.should include("Added at #{offset}\n")
 			
 			output, error = run_get_function('foo', 123, offset)
 			output.should include("Data: hello world\n")
 		end
 		
-		it "returns a not-found error if the requested group does not exist" do
+		it "returns an ERR_NOT_FOUND error if the requested group does not exist" do
 			eval_js!(@add_code)
 			output, error = run_get_function('bar', 123, 0)
-			output.should include("Error: not-found\n")
+			output.should include("Error: Time entry not found\n")
 		end
 		
-		it "returns a not-found error if the requested time entry does not exist" do
+		it "returns an ERR_NOT_FOUND error if the requested time entry does not exist" do
 			eval_js!(@add_code)
 			FileUtils.mkdir_p("#{@dbpath}/foo/123")
 			output, error = run_get_function('foo', 456, 0)
-			output.should include("Error: not-found\n")
+			output.should include("Error: Time entry not found\n")
 		end
 		
-		it "returns a not-found error if an invalid offset" do
+		it "returns an error if an invalid offset is given" do
 			output, error = eval_js!(%Q{
 				#{@header}
 				add('foo', 1, 'hello world', function(offset) {
 					database.get('foo', 1, 1, function(err) {
-						console.log("Error: " + err);
+						console.log("Error: " + err.message);
 					});
 				});
 			})
 			output.should == "Error: Invalid offset or data file corrupted (invalid magic)\n"
 		end
 		
-		it "returns a not-found error if the entry is corrupted" do
+		it "returns an error if the record is corrupted" do
 			eval_js!(%Q{
 				#{@header}
 				add('foo', 1, 'hello world')
@@ -434,10 +442,37 @@ describe "Database" do
 				#{@header}
 				database.reload();
 				database.get('foo', 1, 0, function(err) {
-					console.log("Error: " + err);
+					console.log("Error: " + err.message);
 				});
 			})
 			output.should == "Error: Data file corrupted (invalid checksum in header)\n"
+		end
+
+		it "reads records that are marked as corrupted" do
+			eval_js!(%Q{
+				#{@header}
+				add('foo', 1, 'hello', { corrupted: true })
+			})
+			output, error = eval_js!(%Q{
+				#{@header}
+				database.reload();
+				database.get('foo', 1, 0, function(err, record) {
+					if (err) {
+						console.log("Error: " + err.message);
+					} else {
+						if (record.corrupted) {
+							console.log("Record corrupted");
+						}
+						console.log("data = %s", record.data.toString());
+						console.log("dataSize = %d, recordSize = %d",
+							record.dataSize, record.recordSize);
+					}
+				});
+			})
+			output.should ==
+				"Record corrupted\n" +
+				"data = hello\n" +
+				"dataSize = #{'hello'.size}, recordSize = #{HEADER_SIZE + 'hello'.size + FOOTER_SIZE}\n"
 		end
 	end
 	
@@ -490,7 +525,7 @@ describe "Database" do
 			
 		end
 		
-		it "iterates through all entries" do
+		it "iterates through all records" do
 			output, error = eval_js!(%Q{
 				#{@header}
 				
@@ -504,15 +539,15 @@ describe "Database" do
 				
 				function startTest() {
 					database.findTimeEntry('foo', 1).each(0,
-						function(err, buf, rawSize, continueReading, stop)
+						function(err, record)
 					{
 						if (err) {
-							console.log(err);
+							console.log(err.message);
 							process.exit(1);
 						}
-						if (buf.length > 0) {
-							console.log("Entry:", buf.toString('ascii'));
-							continueReading();
+						if (!record.eof) {
+							console.log("Record:", record.data.toString('ascii'));
+							record.readNext();
 						} else {
 							console.log("EOF");
 						}
@@ -526,9 +561,9 @@ describe "Database" do
 				add('bar', 2, 'some text', added);
 			})
 			output.should ==
-				"Entry: hello\n" +
-				"Entry: world\n" +
-				"Entry: another entry\n" +
+				"Record: hello\n" +
+				"Record: world\n" +
+				"Record: another entry\n" +
 				"EOF\n"
 		end
 		
@@ -546,15 +581,15 @@ describe "Database" do
 				
 				function startTest() {
 					database.findTimeEntry('foo', 1).each(1,
-						function(err, buf, continueReading, stop)
+						function(err, record)
 					{
 						if (err) {
-							console.log(err);
+							console.log(err.message);
 							process.exit(1);
 						}
-						if (buf.length > 0) {
-							console.log("Entry:", buf.toString('ascii'));
-							continueReading();
+						if (!record.eof) {
+							console.log("Record:", record.data.toString('ascii'));
+							record.readNext();
 						} else {
 							console.log("EOF");
 						}
@@ -568,6 +603,42 @@ describe "Database" do
 			status.should == 1
 			output.should == "Invalid offset or data file corrupted (invalid magic)\n"
 			error.should be_empty
+		end
+
+		it "skips over records that are marked as corrupted" do
+			eval_js!(%Q{
+				#{@header}
+				add('foo', 1, 'aaa');
+				add('foo', 1, 'bbb', { corrupted: true });
+				add('foo', 1, 'ccc');
+			})
+			output, error = eval_js!(%Q{
+				#{@header}
+				database.reload();
+				database.findTimeEntry('foo', 1).each(0,
+					function(err, record) {
+						if (err) {
+							console.log("Error:", err.message);
+						} else if (!record.eof) {
+							if (record.corrupted) {
+								console.log("Record: %s (corrupted)",
+									record.data.toString());
+							} else {
+								console.log("Record: %s",
+									record.data.toString());
+							}
+							record.readNext();
+						} else {
+							console.log("EOF");
+						}
+					}
+				);
+			})
+			output.should ==
+				"Record: aaa\n" +
+				"Record: bbb (corrupted)\n" +
+				"Record: ccc\n" +
+				"EOF\n"
 		end
 	end
 	
