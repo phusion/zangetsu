@@ -155,6 +155,7 @@ module SpecHelper
 					end
 					#puts 'connected'
 					socket.sync = true
+					socket.fcntl(Fcntl::F_SETFL, socket.fcntl(Fcntl::F_GETFL) & ~Fcntl::O_NONBLOCK)
 					return socket
 				rescue Errno::ECONNREFUSED
 					#puts "refused"

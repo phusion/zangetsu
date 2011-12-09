@@ -1,7 +1,10 @@
 # encoding: binary
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
+require File.expand_path(File.dirname(__FILE__) + "/shared_server_spec")
 
 describe "Server" do
+	it_should_behave_like "A Zangetsu Server"
+
 	before :each do
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
@@ -13,6 +16,10 @@ describe "Server" do
 		@server = async_eval_js(@code, :capture => !DEBUG)
 		@connection = wait_for_port(TEST_SERVER_PORT)
 	end
+
+	def timestamp_to_day(timestamp)
+		timestamp / (60 * 60 * 24)
+	end
 	
 	after :each do
 		@connection.close if @connection
@@ -20,22 +27,27 @@ describe "Server" do
 			@server.close
 		end
 	end
-	
-	def handshake(args = {})
-		read_json
-		write_json(args)
-		read_json.should == { 'status' => 'ok' }
+
+	def path_for_key(key)
+		"#{@dbpath}/#{key[:group]}/#{timestamp_to_day(key[:timestamp])}/data"
 	end
-	
-	describe "handshake" do
-		it "works as expected" do
-			response = read_json
-			response['protocolMajor'].should == 1
-			response['protocolMinor'].should == 0
-			response['serverName'].should =~ /zangetsu/i
-			
-			write_json({})
-			read_json.should == { 'status' => 'ok' }
+
+	def data_file_exist?(key)
+		File.exist?(path_for_key(key))
+	end
+
+	def data_exist?(key, data)
+		data = [data] if not data.is_a? Array
+		File.stat(path_for_key(key)).size ==
+			(@header_size * data.size) + data.map(&:size).inject(0){|m,x|m+=x} + (@footer_size * data.size)
+	end
+
+	def should_be_added(key, data)
+		eventually do
+			data_file_exist?(key)
+		end
+		eventually do
+			data_exist?(key, "hello world")
 		end
 	end
 	
@@ -100,96 +112,6 @@ describe "Server" do
 			File.stat("#{@dbpath}/foo/2/data").size.should ==
 				HEADER_SIZE + "hello".size + FOOTER_SIZE +
 				HEADER_SIZE + "world!".size + FOOTER_SIZE
-		end
-		
-		it "complains if an opid is given for which the result isn't yet fetched" do
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			should_never_happen { socket_readable?(@connection) }
-			
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			response = read_json
-			response["status"].should == "error"
-			response["message"].should =~ /opid is already used/
-		end
-	end
-	
-	describe "fetching results" do
-		before :each do
-			handshake
-		end
-		
-		it "clears the result set" do
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			
-			write_json(:command => 'results')
-			read_json.should == {
-				"results" => {
-					"1" => {
-						"status" => "ok",
-						"offset" => 0
-					}
-				},
-				"status" => "ok"
-			}
-			
-			write_json(:command => 'results')
-			read_json.should == {
-				"results" => {},
-				"status"  => "ok"
-			}
-		end
-		
-		it "deletes any active opids" do
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			
-			write_json(:command => 'results')
-			read_json.should == {
-				"results" => {
-					"1" => {
-						"status" => "ok",
-						"offset" => 0
-					}
-				},
-				"status" => "ok"
-			}
-			
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			
-			write_json(:command => 'results')
-			read_json.should == {
-				"results" => {
-					"1" => {
-						"status" => "ok",
-						"offset" => HEADER_SIZE + "hello".size + FOOTER_SIZE
-					}
-				},
-				"status" => "ok"
-			}
 		end
 	end
 
