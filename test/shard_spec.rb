@@ -125,20 +125,19 @@ describe "Shard" do
 
 	describe "results" do
 		it "should get the results of previous write operations" do
-			pending "Ask hongli how results should behave"
 			code = @shard_code + %Q{
 				var callback = function(message, buffers) {
-					console.log(message);
+					console.log(message.results['2'].status);
 				}
 				var done = function(err) {
-					shard.results(false, callback);
+					shard.results(callback);
 				}
 				var buffer = new Buffer("string");
 				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
 			}
-			@proc = async_eval_js code, :capture => false
+			@proc = async_eval_js code	
 			eventually do
-				@proc.output == "true\n"
+				@proc.output == "ok\n"
 			end
 		end
 	end
