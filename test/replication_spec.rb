@@ -3,15 +3,6 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "Replication" do
 	before :all do
-		output, error = eval_js!(%Q{
-			var TimeEntry = require('zangetsu/time_entry.js');
-			console.log(TimeEntry.HEADER_SIZE);
-			console.log(TimeEntry.FOOTER_SIZE);
-		})
-		@header_size, @footer_size = output.split("\n")
-		@header_size = @header_size.to_i
-		@footer_size = @footer_size.to_i
-		
 		@dbpath = 'tmp/db'
 		@common_code = %Q{
 			var Server   = require('zangetsu/server');
@@ -341,7 +332,7 @@ describe "Replication" do
 					:results => {
 						0 => {
 							:status => 'ok',
-							:offset => @header_size + 'foo2'.size + @footer_size
+							:offset => HEADER_SIZE + 'foo2'.size + FOOTER_SIZE
 						}
 					}
 				)
@@ -588,7 +579,7 @@ describe "Replication" do
 				write_json({
 					:foo => {
 						1 => {
-							:size => @header_size
+							:size => HEADER_SIZE
 						}
 					}
 				})
@@ -633,7 +624,7 @@ describe "Replication" do
 					:results => {
 						0 => {
 							:status => 'ok',
-							:offset => @header_size + 'hello'.size + @footer_size
+							:offset => HEADER_SIZE + 'hello'.size + FOOTER_SIZE
 						}
 					}
 				)
@@ -671,7 +662,7 @@ describe "Replication" do
 						}
 					}
 				)
-				offset += @header_size + 'aaa'.size + @footer_size
+				offset += HEADER_SIZE + 'aaa'.size + FOOTER_SIZE
 
 				read_json.should == {
 					'command' => 'add',
@@ -692,7 +683,7 @@ describe "Replication" do
 						}
 					}
 				)
-				offset += @header_size + 'bbb'.size + @footer_size
+				offset += HEADER_SIZE + 'bbb'.size + FOOTER_SIZE
 
 				read_json.should == {
 					'command' => 'add',
@@ -712,7 +703,7 @@ describe "Replication" do
 						}
 					}
 				)
-				offset += @header_size + 'aaa'.size + @footer_size
+				offset += HEADER_SIZE + 'aaa'.size + FOOTER_SIZE
 			end
 		end
 	end
