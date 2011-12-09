@@ -20,46 +20,6 @@ describe "Distributed locks" do
 		end
 	end
 
-	describe "acquireLock" do
-		it "should ask other shardservers for the lock" do
-			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.addShardServer({hostname: 'aap', port: 5321});
-					database.addShardServer({hostname: 'noot', port: 5321});
-					database.addShardServer({hostname: 'mies', port: 5321});
-					var proto = database.shardServers.aap.constructor.prototype;
-					proto.acquireLock = function(group, key) {
-						console.log("acquireLock");
-					}
-					database.acquireLock("group", 1);
-					console.log(database.lockTable["group" + '/' + 1].hostname);
-			}
-			eventually do
-				@proc.output == "acquireLock\nacquireLock\nacquireLock\nlocalhost\n"
-			end
-		end
-
-		it "should not ask for locks for existing lock but queue callback" do
-			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.addShardServer({hostname: 'aap', port: 5321});
-					var proto = database.shardServers.aap.constructor.prototype;
-					proto.acquireLock = function(group, key) {
-						console.log("acquireLock");
-					}
-					database.lockTable["group/1"] = {hostname : "noot", callbacks : [function(){}]}
-					database.acquireLock("group", 1, function(){});
-					console.log(database.lockTable["group/1"].callbacks.length);
-			}
-			eventually do
-				@proc.output == "2\n"
-			end
-			@proc.close
-		end
-	end
-
 	# Design:
 	# When a file needs to be changed, a node requests the lock. It will
 	# do so by sending a lock request to all registered shard servers.

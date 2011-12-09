@@ -12,11 +12,17 @@ describe "ShardServer" do
 	 before :each do
 	 	@dbpath = 'tmp/db'
 	 	FileUtils.mkdir_p(@dbpath)
-		FileUtils.mkdir_p('tmp/db')
 
-		config = %Q{{ "shards" : [], "shardServers" : []}}
+		@shard_port = TEST_SERVER_PORT + 1
+		@shard_code = %Q{
+			var Server = require('zangetsu/server').Server;
+			var server = new Server("tmp/db");
+			server.startAsMaster('127.0.0.1', #{@shard_port});
+		}
+		@shard = async_eval_js(@shard_code, :capture => !DEBUG)
+
+		config = %Q{{ "shards" : [{"hostname" : "localhost", "port" : #{@shard_port}}], "shardServers" : []}}
 		File.open('tmp/config.json', 'w') {|f| f.write(config) }
-
 	 	@code = %Q{
 	 		var Server = require('zangetsu/shard_server').ShardServer;
 	 		var server = new Server("tmp/config.json");
@@ -32,14 +38,37 @@ describe "ShardServer" do
 		if @server && !@server.closed?
 			@server.close
 		end
+		if @shard && !@shard.closed?
+			@shard.close
+		end
+	end
+
+	def timestamp_to_day(timestamp)
+		timestamp / (60 * 60 * 24)
+	end
+
+	def path_for_key(key)
+		"#{@dbpath}/#{key[:group]}/#{timestamp_to_day(key[:timestamp])}/data"
+	end
+
+	def data_file_exist?(key)
+		File.exist?(path_for_key(key))
 	end
 
 	def data_exist?(key, data)
 		data = [data] if not data.is_a? Array
-		pending "implement data_exist?"
+		File.stat(path_for_key(key)).size ==
+			(HEADER_SIZE * data.size) +
+			data.map(&:size).inject(0) { |m, x| m += x } +
+			(FOOTER_SIZE * data.size)
 	end
 
 	def should_be_added(key, data)
-		pending "implement should_be_added"
+		eventually do
+			data_file_exist?(key)
+		end
+		eventually do
+			data_exist?(key, "hello world")
+		end
 	end
 end
