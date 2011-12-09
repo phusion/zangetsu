@@ -113,65 +113,6 @@ describe "Server" do
 				HEADER_SIZE + "hello".size + FOOTER_SIZE +
 				HEADER_SIZE + "world!".size + FOOTER_SIZE
 		end
-		
-		it "complains if an opid is given for which the result isn't yet fetched" do
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			should_never_happen { socket_readable?(@connection) }
-			
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			response = read_json
-			response["status"].should == "error"
-			response["message"].should =~ /opid is already used/
-		end
-
-		
-		it "deletes any active opids" do
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			
-			write_json(:command => 'results')
-			read_json.should == {
-				"results" => {
-					"1" => {
-						"status" => "ok",
-						"offset" => 0
-					}
-				},
-				"status" => "ok"
-			}
-			
-			write_json(:command => 'add',
-				:group => 'foo',
-				:timestamp => 48 * 60 * 60,
-				:size => "hello".size,
-				:opid => 1)
-			@connection.write("hello")
-			
-			write_json(:command => 'results')
-			read_json.should == {
-				"results" => {
-					"1" => {
-						"status" => "ok",
-						"offset" => HEADER_SIZE + "hello".size + FOOTER_SIZE
-					}
-				},
-				"status" => "ok"
-			}
-		end
 	end
 
 	describe "getting" do

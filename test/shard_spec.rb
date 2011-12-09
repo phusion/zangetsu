@@ -7,17 +7,13 @@ describe "Shard" do
 	def initialize_remote
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
-		@server_socket = TCPServer.new('127.0.0.1', TEST_SERVER_PORT)
-		@server_socket.listen(50)
-		@server_socket.fcntl(Fcntl::F_SETFL, @server_socket.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
-		@server_code = %Q{
-				var Server = require('zangetsu/server').Server;
-				var server = new Server("tmp/db");
-				server.startAsMasterWithFD(#{@server_socket.fileno});
+		@code = %Q{
+			var Server = require('zangetsu/server').Server;
+			var server = new Server("tmp/db");
+			server.startAsMaster('127.0.0.1', #{TEST_SERVER_PORT});
 		}
-		@server = async_eval_js(@server_code, :capture => false)
-		@connection = TCPSocket.new('127.0.0.1', TEST_SERVER_PORT)
-		@connection.sync = true
+		@server = async_eval_js(@code, :capture => !DEBUG)
+		@connection = wait_for_port(TEST_SERVER_PORT)
 	end
 
 	def finalize_remote
@@ -25,7 +21,6 @@ describe "Shard" do
 		if @server && !@server.closed?
 			@server.close
 		end
-		@server_socket.close if @server_socket
 	end
 
 	before :each do
@@ -59,7 +54,7 @@ describe "Shard" do
 		end
 
 		it "should perform the handshake" do
-			@proc = async_eval_js @connect_code, :capture => false
+			@proc = async_eval_js @connect_code
 			eventually do
 				output = @proc.output
 				@proc.output == "connected\n"
@@ -92,7 +87,9 @@ describe "Shard" do
 					console.log(buffers[0].toString('utf8'));
 				}
 				var done = function(err) {
-					shard.get("groupName", 1, 0, callback);
+					shard.results(function() {
+						shard.get("groupName", 1, 0, callback);
+					});
 				}
 				var buffer = new Buffer("string");
 				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
@@ -108,11 +105,13 @@ describe "Shard" do
 		it "should fetch the toc from the shard" do
 			code = @shard_code + %Q{
 				var callback = function(message, buffers) {
-					var truth = message.groupName['0'].size == 26;
+					var truth = message.groupName['0'].size == 35;
 					console.log(truth);
 				}
 				var done = function(err) {
-					shard.getTOC(callback);
+					shard.results(function() {
+						shard.getTOC(callback);
+					});
 				}
 				var buffer = new Buffer("string");
 				shard.add("groupName", 1, 2, buffer.length, [buffer], done);
