@@ -46,3 +46,90 @@ describe "Server" do
 
 	it_should_behave_like "A Zangetsu Server"
 end
+
+describe "Server" do
+	after :each do
+		@connection.close if @connection && !@connection.closed?
+		@server.close if @server && !@server.closed?
+	end
+	
+	def start_as_slave
+		@dbpath = 'tmp/db'
+		FileUtils.mkdir_p(@dbpath)
+		@code = %Q{
+			var Server = require('zangetsu/server').Server;
+			var server = new Server("tmp/db");
+			server.startAsSlave('127.0.0.1', #{TEST_SERVER_PORT}, undefined,
+				'127.0.0.1', #{TEST_SERVER_PORT2});
+		}
+		@server = async_eval_js(@code, :capture => !DEBUG)
+		@connection = wait_for_port(TEST_SERVER_PORT)
+	end
+
+	def handshake(args = {})
+		read_json
+		write_json(args)
+		read_json.should == { 'status' => 'ok' }
+	end
+
+	describe "adding" do
+		before :each do
+			start_as_slave
+			handshake
+		end
+
+		it "returns an error if the server is a slave" do
+			write_json(
+				:group => 'foo',
+				:timestamp => 48 * 60 * 60,
+				:command => 'add',
+				:size => "hello world".size,
+				:opid => 1
+			)
+			read_json.should == {
+				'status' => 'error',
+				'message' => 'This command is not allowed because the server is in slave mode',
+				'disconnect' => true
+			}
+		end
+	end
+
+	describe "remove" do
+		before :each do
+			start_as_slave
+			handshake
+		end
+
+		it "returns an error if the server is a slave" do
+			write_json(
+				:command => 'remove',
+				:group => 'foo'
+			)
+			read_json.should == {
+				'status' => 'error',
+				'message' => 'This command is not allowed because the server is in slave mode',
+				'disconnect' => true
+			}
+		end
+	end
+
+	describe "removeOne" do
+		before :each do
+			start_as_slave
+			handshake
+		end
+
+		it "returns an error if the server is a slave" do
+			write_json(
+				:command => 'removeOne',
+				:group => 'foo',
+				:dayTimestamp => 1
+			)
+			read_json.should == {
+				'status' => 'error',
+				'message' => 'This command is not allowed because the server is in slave mode',
+				'disconnect' => true
+			}
+		end
+	end
+end

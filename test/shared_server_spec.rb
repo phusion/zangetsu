@@ -4,9 +4,7 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 shared_examples_for "A Zangetsu Server" do
 	after :each do
 		@connection.close if @connection && !@connection.closed?
-		if @server && !@server.closed?
-			@server.close
-		end
+		@server.close if @server && !@server.closed?
 	end
 	
 	def handshake(args = {})
@@ -267,5 +265,23 @@ shared_examples_for "A Zangetsu Server" do
 			result['status'].should == 'error'
 			result['message'].should == 'Cannot get requested data: Time entry not found'
 		end
+	end
+
+	describe "remove" do
+		before :each do
+			handshake
+		end
+
+		it "removes an entire group when no timestamp is given"
+
+		it "removes all time entries older than the given timestamp inside a group when a timestamp is given"
+	end
+	
+	describe "removeOne" do
+		before :each do
+			handshake
+		end
+
+		it "removes only the given time entry"
 	end
 end
