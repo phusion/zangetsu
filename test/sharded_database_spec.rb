@@ -90,7 +90,7 @@ describe "ShardedDatabase" do
 						}
 					}
 				};
-				var shard = {"hostname" : "shard1"};
+				var shard = {"identifier" : "shard1"};
 				database.addToToc(shard, toc);
 				console.log(shard.total_size);
 
@@ -101,10 +101,10 @@ describe "ShardedDatabase" do
 						}
 					}
 				};
-				var shard2 = {"hostname" : "shard2"};
+				var shard2 = {"identifier" : "shard2"};
 				database.addToToc(shard2, toc);
-				console.log(database.toc.groups.a["2"].shard.hostname);
-				console.log(database.toc.groups.a["3"].shard.hostname);
+				console.log(database.toc.groups.a["2"].shard.identifier);
+				console.log(database.toc.groups.a["3"].shard.identifier);
 			}
 		end
 

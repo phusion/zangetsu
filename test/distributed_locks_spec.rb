@@ -56,14 +56,14 @@ describe "Distributed locks" do
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						giveLock: function(key) {
 							console.log("locked");
 						}
 					}
 					database.shardServers.otherServer = otherServer;
-					database.giveLock(otherServer.hostname, "group", 1);
-					console.log(database.lockTable["group/1"].hostname == otherServer.hostname);
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
 			}
 			eventually do
 				@proc.output == "locked\ntrue\n"
@@ -76,17 +76,17 @@ describe "Distributed locks" do
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					database.priority = 1;
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						giveLock: function(key) {
 							console.log("locked");
 						},
 						priority: 0
 					}
 					database.shardServers.otherServer = otherServer;
-					database.shardServers[database.hostname] = database;
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: []};
-					database.giveLock(otherServer.hostname, "group", 1);
-					console.log(database.lockTable["group/1"].hostname == otherServer.hostname);
+					database.shardServers[database.identifier] = database;
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: []};
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
 			}
 			eventually do
 				@proc.output == "false\n"
@@ -99,17 +99,17 @@ describe "Distributed locks" do
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					database.priority = 0;
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						giveLock: function(key) {
 							console.log("locked");
 						},
 						priority: 1
 					}
 					database.shardServers.otherServer = otherServer;
-					database.shardServers[database.hostname] = database;
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: []};
-					database.giveLock(otherServer.hostname, "group", 1);
-					console.log(database.lockTable["group/1"].hostname == otherServer.hostname);
+					database.shardServers[database.identifier] = database;
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: []};
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
 			}
 			eventually do
 				@proc.output == "locked\ntrue\n"
@@ -122,7 +122,7 @@ describe "Distributed locks" do
 			@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: [function() {
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: [function() {
 						console.log('callback');
 					}, function() {
 						console.log('callback');
@@ -142,14 +142,14 @@ describe "Distributed locks" do
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						lock: function(key) {
 							console.log("lock");
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						lock: function(key) {
 							console.log("lock");
 						},
@@ -159,7 +159,7 @@ describe "Distributed locks" do
 					database.shardServers.otherServer2 = otherServer2;
 					database.priority = 0;
 					database.lock("group", 1, function(){});
-					console.log(database.lockTable["group/1"].hostname  == database.hostname);
+					console.log(database.lockTable["group/1"].identifier  == database.identifier);
 			}
 			eventually do
 				@proc.output == "lock\nlock\ntrue\n"
@@ -170,9 +170,9 @@ describe "Distributed locks" do
 			@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.lockTable["group/1"] = {hostname: 'otherServer', callbacks: []};
+					database.lockTable["group/1"] = {identifier: 'otherServer', callbacks: []};
 					database.lock("group", 1, function(){ console.log("callback");});
-					console.log(database.lockTable["group/1"].hostname  == database.hostname);
+					console.log(database.lockTable["group/1"].identifier  == database.identifier);
 					database.lockTable["group/1"].callbacks[0]();
 			}
 			eventually do
@@ -185,13 +185,13 @@ describe "Distributed locks" do
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						lock: function(key) {
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						lock: function(key) {
 						},
 						priority: 2
@@ -220,14 +220,14 @@ describe "Distributed locks" do
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						listLocks: function(key) {
 							console.log('otherServer');
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						listLocks: function(key) {
 							console.log('otherServer2');
 						},
@@ -238,15 +238,15 @@ describe "Distributed locks" do
 					database.priority = 0;
 					var currentTime = new Date().getTime();
 					database.lockTable["group/1"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 30000
 					};
 					database.lockTable["group/2"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime
 					};
 					database.lockTable["group/3"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 20000
 					};
 					database.monitorLocks();
@@ -261,14 +261,14 @@ describe "Distributed locks" do
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						listLocks: function(callback) {
 							callback(["group/1"]);
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						listLocks: function(callback) {
 							callback(["group/2"]);
 						},
@@ -279,15 +279,15 @@ describe "Distributed locks" do
 					database.priority = 0;
 					var currentTime = new Date().getTime();
 					database.lockTable["group/1"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 30000
 					};
 					database.lockTable["group/2"] = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						time: currentTime - 30000
 					};
 					database.lockTable["group/3"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 30000
 					};
 					database.releaseLock = function(group, key) {
@@ -312,14 +312,14 @@ describe "Distributed locks" do
 						return true;
 					}
 
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: [callback], affirmed: []};
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: [callback], affirmed: []};
 
 					var notify = function(k, result) {
 						console.log(result);
 					}
 
-					var otherServer = { hostname: 'otherServer', releaseLock: notify }
-					var otherServer2 = { hostname: 'otherServer2', releaseLock: notify }
+					var otherServer = { identifier: 'otherServer', releaseLock: notify }
+					var otherServer2 = { identifier: 'otherServer2', releaseLock: notify }
 					database.shardServers.otherServer = otherServer;
 					database.shardServers.otherServer2 = otherServer2;
 
@@ -338,7 +338,7 @@ describe "Distributed locks" do
 			@proc = async_eval_js %Q{
 					var ShardedDatabase = require('zangetsu/sharded_database');
 					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.lockTable["group/1"] = {hostname: database.hostname};
+					database.lockTable["group/1"] = {identifier: database.identifier};
 					database.shardServers["otherServer"] = { replyLocks: function(list) {
 						console.log(list[0]);
 					}};
