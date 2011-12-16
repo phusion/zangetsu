@@ -43,6 +43,18 @@ describe "Shard" do
 			@proc.close
 		end
 	end
+
+	describe "initialize" do
+		it "should give the shard an identifier" do
+			output, error = eval_js! %Q{
+				var Shard = require('zangetsu/shard').Shard;
+				var shard = new Shard({hostname: 'hostname', port: 4312});
+				console.log(shard.identifier);
+			}
+			error.should == ""
+			output.should == "hostname:4312\n"
+		end
+	end
 	
 	describe "connect" do
 		before :each do
