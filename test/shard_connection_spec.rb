@@ -56,20 +56,17 @@ describe "ShardConnection" do
 		end
 	end
 	
-	describe "connect" do
+	describe "_connect" do
 		before :each do
 			@connect_code = @shard_code + %Q{
-				shard.connect(function(message) {
-					console.log("connected");
-				});
+				shard._connect();
 			}
 		end
 
 		it "should perform the handshake" do
 			@proc = async_eval_js @connect_code
 			eventually do
-				output = @proc.output
-				@proc.output == "connected\n"
+				@proc.output.include? "Connected"
 			end
 		end
 	end
@@ -96,11 +93,13 @@ describe "ShardConnection" do
 		it "should fetch data from the shard" do
 			code = @shard_code + %Q{
 				var callback = function(message, buffers) {
+					console.log(message);
 					console.log(buffers[0].toString('utf8'));
 				}
 				var done = function(err) {
-					shard.results(function() {
-						shard.get("groupName", 1, 0, callback);
+					shard.results(function(results) {
+						console.log(results);
+						shard.get("groupName", 0, 0, callback);
 					});
 				}
 				var buffer = new Buffer("string");
@@ -108,7 +107,7 @@ describe "ShardConnection" do
 			}
 			@proc = async_eval_js code
 			eventually do
-				@proc.output == "string\n"
+				@proc.output.include? "string\n"
 			end
 		end
 	end
@@ -117,6 +116,7 @@ describe "ShardConnection" do
 		it "should fetch the toc from the shard" do
 			code = @shard_code + %Q{
 				var callback = function(message, buffers) {
+					console.log(message);
 					var truth = message.groupName['0'].size == 35;
 					console.log(truth);
 				}
@@ -130,7 +130,7 @@ describe "ShardConnection" do
 			}
 			@proc = async_eval_js code
 			eventually do
-				@proc.output == "true\n"
+				@proc.output.include? "true\n"
 			end
 		end
 	end
@@ -149,7 +149,7 @@ describe "ShardConnection" do
 			}
 			@proc = async_eval_js code	
 			eventually do
-				@proc.output == "ok\n"
+				@proc.output.include? "ok\n"
 			end
 		end
 	end
@@ -164,7 +164,7 @@ describe "ShardConnection" do
 			}
 			@proc = async_eval_js code
 			eventually do
-				@proc.output == "true\n"
+				@proc.output.include? "true\n"
 			end
 		end
 	end
@@ -183,7 +183,7 @@ describe "ShardConnection" do
 			}
 			@proc = async_eval_js code
 			eventually do
-				@proc.output == "true\n" and
+				@proc.output.include?("true\n") and
 					not Dir.entries(@dbpath).include? "groupName"
 			end
 		end
@@ -203,7 +203,7 @@ describe "ShardConnection" do
 			}
 			@proc = async_eval_js code
 			eventually do
-				@proc.output == "true\n" and
+				@proc.output.include?("true\n") and
 					not Dir.entries(@dbpath + '/groupName').include? "0"
 			end
 		end
