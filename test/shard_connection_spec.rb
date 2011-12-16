@@ -1,8 +1,8 @@
 # encoding: binary
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
-describe "Shard" do
-	# Shard is a proxy for physical shards
+describe "ShardConnection" do
+	# ShardConnection is a proxy for physical shards
 	
 	def initialize_remote
 		@dbpath = 'tmp/db'
@@ -25,9 +25,9 @@ describe "Shard" do
 
 	before :each do
 		@shard_code = %Q{
-			var Shard = require('zangetsu/shard').Shard;
+			var ShardConnection = require('zangetsu/shard_connection').ShardConnection;
 			var ioutils = require('zangetsu/io_utils');
-			var shard = new Shard(
+			var shard = new ShardConnection(
 				{
 					hostname : '127.0.0.1',
 					port: #{TEST_SERVER_PORT}
@@ -47,8 +47,8 @@ describe "Shard" do
 	describe "initialize" do
 		it "should give the shard an identifier" do
 			output, error = eval_js! %Q{
-				var Shard = require('zangetsu/shard').Shard;
-				var shard = new Shard({hostname: 'hostname', port: 4312});
+				var ShardConnection = require('zangetsu/shard_connection').ShardConnection;
+				var shard = new ShardConnection({hostname: 'hostname', port: 4312});
 				console.log(shard.identifier);
 			}
 			error.should == ""
