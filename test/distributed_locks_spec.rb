@@ -207,6 +207,8 @@ describe "Distributed locks" do
 				@proc.output == "callback\ncallback\ntrue\n"
 			end
 		end
+
+		it "should execute the action that is given in the unlock message"
 	end
 
 	describe "lock" do
