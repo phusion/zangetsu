@@ -145,11 +145,9 @@ describe "ShardedDatabase" do
 				database.remove("a", 1, function() { console.log('done'); });
 			}
 			eventually do
-				@proc.output.include? "done\ndone"
+				@proc.output.include? "locked\ndone"
 			end
 		end
-
-		it "should lock the file before it is removed"
 	end
 
 	describe "rebalance" do
