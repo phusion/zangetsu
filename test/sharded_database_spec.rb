@@ -36,7 +36,8 @@ describe "ShardedDatabase" do
 				var router = {
 					"toc" : {"a" : { 1 : {
 						"shard" : { "identifier" : "one" }
-					}  }}
+					}  }},
+					"isLocked" : function(group, stamp) { return false; }
 				};
 				var database = new Database(router);
 				database.shardConnections["one"] = {"add" : function(g,t,o,s,b, call) { call();}};
@@ -74,12 +75,13 @@ describe "ShardedDatabase" do
 		it "should queue the add when the file is locked" do
 			@proc = async_eval_js %Q{
 				var Database = require ('zangetsu/sharded_database').Database;
-				var router = {
-					"toc" : {"a" : { 1 : {
-						"shard" : { "identifier" : "one" }
-					}  }},
-					"lockTable" : {"a/1" : { "callbacks" : [] } }
-				};
+				var Router = require('zangetsu/shard_router').ShardRouter;
+				Router.prototype.configure = function() {};
+				var router = new Router();
+				router.toc = {"a" : { 1 : {
+					"shard" : { "identifier" : "one" }
+				}  }};
+				router.lockTable = {"a/1" : { "callbacks" : [] } };
 				var database = new Database(router);
 				database.shardConnections["one"] = {"add" : function(g,t,o,s,b, call) { call();}};
 				database.add("wah", "a", 1, [], 1, function() { console.log('done'); });
@@ -123,7 +125,30 @@ describe "ShardedDatabase" do
 	end
 	
 	describe "remove" do
-		it "should forward the remove call to the right database"
+		it "should forward the remove call to the right database" do
+			@proc = async_eval_js %Q{
+				var Database = require ('zangetsu/sharded_database').Database;
+				var router = {
+					"toc" : {"a" : { 1 : {
+						"shard" : { "identifier" : "one" }
+					}  }},
+					"lock" : function(g,t,f) {
+						console.log('locked');
+						f(true);
+					},
+					"shards" : [
+						{ "identifier" : "one" }
+					]
+				};
+				var database = new Database(router);
+				database.shardConnections["one"] = {"remove" : function(g,t,call) { call();}};
+				database.remove("a", 1, function() { console.log('done'); });
+			}
+			eventually do
+				@proc.output.include? "done\ndone"
+			end
+		end
+
 		it "should lock the file before it is removed"
 	end
 
