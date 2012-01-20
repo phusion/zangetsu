@@ -208,7 +208,49 @@ describe "Distributed locks" do
 			end
 		end
 
-		it "should execute the action that is given in the unlock message"
+		it "should execute the action that is given in the unlock message" do
+			@proc = async_eval_js %Q{
+				var ShardRouter = require('zangetsu/shard_router');
+				var router = new ShardRouter.ShardRouter('tmp/config.json');
+				router.shards = {"shard1" : { identifier: "shard1"}};
+				router.lockTable["group/1"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", 1, {
+					command: "add",
+					shard: "shard1",
+					group: "group",
+					dayTimestamp: 1,
+				});
+				console.log(router.toc.group[1].shard.identifier);
+
+				router.toc["group"] = {1 : {}};
+				router.lockTable["group"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", null, {
+					command: "remove",
+					group: "group"
+				});
+				console.log(router.toc.group);
+
+				router.toc["group"] = {1 : {}, 2 : {}};
+				router.lockTable["group"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", null, {
+					command: "remove",
+					group: "group",
+					timestamp: 2 * 60 * 60 * 24
+				});
+				console.log(router.toc.group[2] == undefined);
+
+				router.lockTable["group/2"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", 2, {
+					command: "removeOne",
+					group: "group",
+					dayTimestamp: 2
+				});
+				console.log(router.toc.group[2] == undefined);
+			}
+			eventually do
+				@proc.output == "shard1\nundefined\nfalse\ntrue\n"
+			end
+		end
 	end
 
 	describe "lock" do
