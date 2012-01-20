@@ -16,8 +16,8 @@ describe "ShardedRouter" do
 			config = %Q{{ "shards" : [], "shardServers" : []}}
 			File.open('tmp/config.json', 'w') {|f| f.write(config) }
 			@proc = async_eval_js %Q{
-				var ShardedDatabase = require('zangetsu/sharded_database');
-				var database = new ShardedDatabase.Database('tmp/config.json');
+				var ShardRouter = require('zangetsu/shard_router').ShardRouter;
+				var database = new ShardRouter('tmp/config.json');
 				var toc = {
 					"groups" : {
 						"a" : {
@@ -77,13 +77,13 @@ describe "ShardedRouter" do
 				config = %Q{{ "shards" : [], "shardServers" : []}}
 				File.open('tmp/config.json', 'w') {|f| f.write(config) }
 				@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var Router = require('zangetsu/shard_router').ShardRouter;
+					var database = new Router('tmp/config.json');
 					var server = {"hostname" : "aap", "port" : 1532};
 					database.addShardServer(server);
-					console.log(database.shardServers["aap"].hostname);
-					database.removeShardServer(server);
-					console.log(database.shardServers["aap"]);
+					console.log(database.shardServers["aap:1532"].hostname);
+					database.removeShardServer({identifier : "aap:1532"});
+					console.log(database.shardServers["aap:1532"]);
 				}
 				eventually do
 					@proc.output == "aap\nundefined\n"
@@ -127,6 +127,10 @@ describe "ShardedRouter" do
 				 ]
 				}
 			}
+			begin
+				Dir.mkdir('tmp')
+			rescue
+			end
 			File.open('tmp/config_1.json', 'w') {|f| f.write(config) }
 			File.open('tmp/config_2.json', 'w') {|f| f.write(config_2) }
 		end
@@ -139,18 +143,18 @@ describe "ShardedRouter" do
 		describe "shardsChanged & shardServersChanged" do
 			it "should add new shards and remove old ones" do
 				@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database').Database;
-					ShardedDatabase.prototype.oldAddShard = ShardedDatabase.prototype.addShard;
-					ShardedDatabase.prototype.addShard = function(description) {
+					var Router = require('zangetsu/shard_router').ShardRouter;
+					Router.prototype.oldAddShard = Router.prototype.addShard;
+					Router.prototype.addShard = function(description) {
 						console.log('add');	
 						this.oldAddShard(description);
 					};
-					ShardedDatabase.prototype.oldRemoveShard = ShardedDatabase.prototype.removeShard;
-					ShardedDatabase.prototype.removeShard = function(shard) {
+					Router.prototype.oldRemoveShard = Router.prototype.removeShard;
+					Router.prototype.removeShard = function(shard) {
 						console.log('remove');	
 						this.oldRemoveShard(shard);
 					};
-					var database = new ShardedDatabase("tmp/config_1.json");
+					var database = new Router("tmp/config_1.json");
 					database.configFile = "tmp/config_2.json";
 					database.configure();
 					database.configFile = "tmp/config_1.json";
@@ -163,18 +167,18 @@ describe "ShardedRouter" do
 
 			it "should add new shardServers and remove old ones" do
 				@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database').Database;
-					ShardedDatabase.prototype.oldAddShardServer = ShardedDatabase.prototype.addShardServer;
-					ShardedDatabase.prototype.addShardServer = function(description) {
+					var ShardRouter = require('zangetsu/shard_router').ShardRouter;
+					ShardRouter.prototype.oldAddShardServer = ShardRouter.prototype.addShardServer;
+					ShardRouter.prototype.addShardServer = function(description) {
 						console.log('add');	
 						this.oldAddShardServer(description);
 					};
-					ShardedDatabase.prototype.oldRemoveShardServer = ShardedDatabase.prototype.removeShardServer;
-					ShardedDatabase.prototype.removeShardServer = function(shard) {
+					ShardRouter.prototype.oldRemoveShardServer = ShardRouter.prototype.removeShardServer;
+					ShardRouter.prototype.removeShardServer = function(shard) {
 						console.log('remove');	
 						this.oldRemoveShardServer(shard);
 					};
-					var database = new ShardedDatabase("tmp/config_1.json");
+					var database = new ShardRouter("tmp/config_1.json");
 					database.configFile = "tmp/config_2.json";
 					database.configure();
 					database.configFile = "tmp/config_1.json";
@@ -189,16 +193,16 @@ describe "ShardedRouter" do
 		describe "configure" do
 			it "it should call shardsChanged iff the amount of shards changed" do
 				@proc = async_eval_js %Q{
-				var ShardedDatabase = require('zangetsu/sharded_database').Database;
-				ShardedDatabase.prototype.shardsChanged = function(shards) {
+				var ShardRouter = require('zangetsu/shard_router').ShardRouter;
+				ShardRouter.prototype.shardsChanged = function(shards) {
 					console.log('shardsChanged');
 					this.shardConfiguration = shards;
 				}
-				ShardedDatabase.prototype.shardServersChanged = function(servers) {
+				ShardRouter.prototype.shardServersChanged = function(servers) {
 					console.log('shardServersChanged');
 					this.shardServerConfiguration = servers;
 				}
-				var database = new ShardedDatabase("tmp/config_1.json");
+				var database = new ShardRouter("tmp/config_1.json");
 				database.configure(); // should not have changed
 				database.configFile = "tmp/config_2.json";
 				database.configure(); // should have changed
