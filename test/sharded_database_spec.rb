@@ -15,7 +15,8 @@ describe "ShardedDatabase" do
 				var router = {
 					"toc" : {"a" : { 1 : {
 						"shard" : { "identifier" : "one" }
-					}  }}
+					}  }},
+					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
 				database.shardConnections["one"] = {"get" : function(a,b,c, call) { call();}};
@@ -37,7 +38,8 @@ describe "ShardedDatabase" do
 					"toc" : {"a" : { 1 : {
 						"shard" : { "identifier" : "one" }
 					}  }},
-					"isLocked" : function(group, stamp) { return false; }
+					"isLocked" : function(group, stamp) { return false; },
+					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
 				database.shardConnections["one"] = {"add" : function(g,t,o,s,b, call) { call();}};
@@ -61,7 +63,8 @@ describe "ShardedDatabase" do
 					},
 					"shards" : [
 						{ "identifier" : "one" }
-					]
+					],
+					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
 				database.shardConnections["one"] = {"add" : function(g,t,o,s,b, call) { call();}};
@@ -79,7 +82,8 @@ describe "ShardedDatabase" do
 				Router.prototype.configure = function() {};
 				var router = new Router();
 				router.toc = {"a" : { 1 : {
-					"shard" : { "identifier" : "one" }
+					"shard" : { "identifier" : "one" },
+					getWorkKey : function(){}, doneWorking: function() {}
 				}  }};
 				router.lockTable = {"a/1" : { "callbacks" : [] } };
 				var database = new Database(router);
@@ -106,7 +110,8 @@ describe "ShardedDatabase" do
 					"toc" : {"a" : { 1 : {
 						"shard" : { "identifier" : "one" }
 					}  }},
-					"lockTable" : {"a/1" : { "callbacks" : [] } }
+					"lockTable" : {"a/1" : { "callbacks" : [] } },
+					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
 				database.shardConnections["one"] = {"results" : function(c) { c({"a" : "done" }); }};
@@ -138,7 +143,8 @@ describe "ShardedDatabase" do
 					},
 					"shards" : [
 						{ "identifier" : "one" }
-					]
+					],
+					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
 				database.shardConnections["one"] = {"remove" : function(g,t,call) { call();}};
