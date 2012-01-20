@@ -3,8 +3,11 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "Distributed locks" do
 	before :each do
-		Dir.mkdir 'tmp'
-		Dir.mkdir 'tmp/db'
+		begin
+			Dir.mkdir 'tmp'
+			Dir.mkdir 'tmp/db'
+		rescue
+		end
 		@dbpath = 'tmp/db'
 	end
 
@@ -186,6 +189,29 @@ describe "Distributed locks" do
 			}
 			eventually do
 				@proc.output == "locked\ntrue\n"
+			end
+		end
+
+		it "should only give the lock when all other local actions have finished" do
+			@proc = async_eval_js %Q{
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
+					var otherServer = {
+						identifier: 'otherServer',
+						giveLock: function(key) {
+							console.log("given");
+						}
+					}
+					database.shardServers.otherServer = otherServer;
+					var key = database.getWorkKey();
+					var key2 = database.getWorkKey();
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
+					database.doneWorking(key);
+					database.doneWorking(key2);
+			}
+			eventually do
+				@proc.output.include? "true\ngiven\n"
 			end
 		end
 	end
