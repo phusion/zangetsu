@@ -76,6 +76,15 @@ describe "SocketInputWrapper" do
 			"End\n"
 	end
 
+	it "considered ended sockets to be paused" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			socket.emit('end');
+			console.log(wrapper.paused);
+		})
+		output.should == "true\n"
+	end
+
 	it "emits socket error events" do
 		output, error = eval_js!(%Q{
 			#{@header}
@@ -103,6 +112,15 @@ describe "SocketInputWrapper" do
 		output.should ==
 			"Data: aaabbb\n" +
 			"Error: foo\n"
+	end
+
+	it "considered error'ed sockets to be paused" do
+		output, error = eval_js!(%Q{
+			#{@header}
+			socket.emit('error', 'foo');
+			console.log(wrapper.paused);
+		})
+		output.should == "true\n"
 	end
 
 	specify "if the onData callback consumes everything and pauses the wrapper, then " +
