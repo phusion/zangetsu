@@ -3,10 +3,80 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 require File.expand_path(File.dirname(__FILE__) + "/shared_server_spec")
 
 describe "ShardServer" do
+	it "should launch from a configuration file" do
+	 	@dbpath = 'tmp/db'
+	 	FileUtils.mkdir_p(@dbpath)
+
+		@shard_port = TEST_SERVER_PORT + 1
+		@shard_code = %Q{
+			var Server = require('zangetsu/server').Server;
+			var server = new Server("tmp/db");
+			server.startAsMaster('127.0.0.1', #{@shard_port});
+		}
+		@shard = async_eval_js(@shard_code, :capture => !DEBUG)
+
+		@shard_port2 = TEST_SERVER_PORT + 2
+		@shard_code2 = %Q{
+			var Server = require('zangetsu/server').Server;
+			var server = new Server("tmp/db");
+			server.startAsMaster('127.0.0.1', #{@shard_port});
+		}
+		@shard2 = async_eval_js(@shard_code, :capture => !DEBUG)
+
+		config = %Q{
+			{ "shards" : [
+				{"hostname" : "localhost", "port" : #{@shard_port}},
+				{"hostname" : "localhost", "port" : #{@shard_port2}}
+			], "shardRouters" : [
+			]
+			}
+		}
+
+		File.open('tmp/config.json', 'w') {|f| f.write(config) }
+
+	 	@code = %Q{
+	 		var Server = require('zangetsu/shard_server').ShardServer;
+	 		var server = new Server("tmp/config.json");
+	 		server.start('127.0.0.1', #{TEST_SERVER_PORT});
+	 	}
+
+	 	@server = async_eval_js(@code, :capture => !DEBUG)
+	 	@connection = wait_for_port(TEST_SERVER_PORT)
+
+		read_json
+		write_json({})
+		read_json.should== {'status' => 'ok' }
+		write_json(
+			:group => 'foo',
+			:timestamp => 48 * 60 * 60,
+			:command => 'add',
+			:size => "hello world".size,
+			:opid => 1
+		)
+		write_json(
+			:command => 'results'
+		)
+		read_json.should == {
+			'status' => 'error',
+			'message' => 'This command is not allowed because the server is in slave mode',
+				'disconnect' => true
+		}
+
+		File.delete('tmp/config.json')
+		@connection.close if @connection
+		if @server && !@server.closed?
+			@server.close
+		end
+		if @shard && !@shard.closed?
+			@shard.close
+		end
+	end
 	it "should be able to add an external database"
 	it "should be able to rebalance data after adding an external database"
 	it "should be able to remove an external database without losing data"
+end
 
+describe "ShardServer operations" do
 	it_should_behave_like "A Zangetsu Server"
 
 	 before :each do
@@ -29,13 +99,10 @@ describe "ShardServer" do
 	 		server.start('127.0.0.1', #{TEST_SERVER_PORT});
 	 	}
 	 	@server = async_eval_js(@code, :capture => !DEBUG)
-		puts "going to wait for port"
 	 	@connection = wait_for_port(TEST_SERVER_PORT)
-		puts "got port"
 	 end
 
 	after :each do
-		puts "going to close"
 		File.delete('tmp/config.json')
 		@connection.close if @connection
 		if @server && !@server.closed?
@@ -44,7 +111,6 @@ describe "ShardServer" do
 		if @shard && !@shard.closed?
 			@shard.close
 		end
-		puts "closed"
 	end
 
 	def timestamp_to_day(timestamp)
