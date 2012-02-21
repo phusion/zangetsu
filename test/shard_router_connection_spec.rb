@@ -1,14 +1,14 @@
 # encoding: binary
 require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
-describe "ShardServerProxy" do
-	# ShardServer is a proxy for physical shard servers
+describe "ShardRouterProxy" do
+	# ShardRouter is a proxy for physical shard servers
 	
 	def initialize_remote
 		@dbpath = 'tmp/db'
 		FileUtils.mkdir_p(@dbpath)
 		@code = %Q{
-			var Server = require('zangetsu/shard_server').ShardServer;
+			var Server = require('zangetsu/shard_server').ShardRouter;
 			var server = new Server("tmp/db");
 			server.start('127.0.0.1', #{TEST_SERVER_PORT}, "localhost");
 		}
