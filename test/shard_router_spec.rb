@@ -80,9 +80,9 @@ describe "ShardedRouter" do
 					var Router = require('zangetsu/shard_router').ShardRouter;
 					var database = new Router('tmp/config.json');
 					var server = {"hostname" : "aap", "port" : 1532};
-					database.addShardServer(server);
+					database.addShardRouter(server);
 					console.log(database.shardRouters["aap:1532"].hostname);
-					database.removeShardServer({identifier : "aap:1532"});
+					database.removeShardRouter({identifier : "aap:1532"});
 					console.log(database.shardRouters["aap:1532"]);
 				}
 				eventually do
@@ -168,15 +168,15 @@ describe "ShardedRouter" do
 			it "should add new shardRouters and remove old ones" do
 				@proc = async_eval_js %Q{
 					var ShardRouter = require('zangetsu/shard_router').ShardRouter;
-					ShardRouter.prototype.oldAddShardServer = ShardRouter.prototype.addShardServer;
-					ShardRouter.prototype.addShardServer = function(description) {
+					ShardRouter.prototype.oldAddShardRouter = ShardRouter.prototype.addShardRouter;
+					ShardRouter.prototype.addShardRouter = function(description) {
 						console.log('add');	
-						this.oldAddShardServer(description);
+						this.oldAddShardRouter(description);
 					};
-					ShardRouter.prototype.oldRemoveShardServer = ShardRouter.prototype.removeShardServer;
-					ShardRouter.prototype.removeShardServer = function(shard) {
+					ShardRouter.prototype.oldRemoveShardRouter = ShardRouter.prototype.removeShardRouter;
+					ShardRouter.prototype.removeShardRouter = function(shard) {
 						console.log('remove');	
-						this.oldRemoveShardServer(shard);
+						this.oldRemoveShardRouter(shard);
 					};
 					var database = new ShardRouter("tmp/config_1.json");
 					database.configFile = "tmp/config_2.json";
