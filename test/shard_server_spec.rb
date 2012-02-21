@@ -29,7 +29,8 @@ describe "ShardServer" do
 				{"hostname" : "localhost", "port" : #{@shard_port}}
 ,				{"hostname" : "localhost", "port" : #{@shard_port2}}
 			], "shardRouters" : [
-				{"hostname" : "localhost", "port" : #{TEST_SERVER_PORT}}
+				{"hostname" : "localhost", "port" : #{TEST_SERVER_PORT}},
+				{"hostname" : "localhost", "port" : #{TEST_SERVER_PORT - 1}}
 			]
 			}
 		}
@@ -43,6 +44,14 @@ describe "ShardServer" do
 
 	 	@server = async_eval_js(@code, :capture => !DEBUG)
 	 	@connection = wait_for_port(TEST_SERVER_PORT)
+	 	@code2 = %Q{
+	 		var Server = require('zangetsu/shard_server').ShardServer;
+	 		var server = new Server("tmp/config.json");
+	 		server.start('localhost', #{TEST_SERVER_PORT - 1}, 'localhost');
+	 	}
+
+	 	@server2 = async_eval_js(@code2, :capture => !DEBUG)
+	 	@connection2 = wait_for_port(TEST_SERVER_PORT - 1)
 
 		read_json
 		write_json({})
@@ -70,11 +79,18 @@ describe "ShardServer" do
 
 		File.delete('tmp/config.json')
 		@connection.close if @connection
+		@connection2.close if @connection2
 		if @server && !@server.closed?
 			@server.close
 		end
 		if @shard && !@shard.closed?
 			@shard.close
+		end
+		if @server2 && !@server2.closed?
+			@server2.close
+		end
+		if @shard2 && !@shard2.closed?
+			@shard2.close
 		end
 	end
 	it "should be able to add an external database"
