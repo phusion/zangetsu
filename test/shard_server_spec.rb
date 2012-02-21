@@ -29,10 +29,13 @@ describe "ShardServer" do
 	 		server.start('127.0.0.1', #{TEST_SERVER_PORT});
 	 	}
 	 	@server = async_eval_js(@code, :capture => !DEBUG)
+		puts "going to wait for port"
 	 	@connection = wait_for_port(TEST_SERVER_PORT)
+		puts "got port"
 	 end
 
 	after :each do
+		puts "going to close"
 		File.delete('tmp/config.json')
 		@connection.close if @connection
 		if @server && !@server.closed?
@@ -41,6 +44,7 @@ describe "ShardServer" do
 		if @shard && !@shard.closed?
 			@shard.close
 		end
+		puts "closed"
 	end
 
 	def timestamp_to_day(timestamp)
