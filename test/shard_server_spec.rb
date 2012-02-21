@@ -29,6 +29,7 @@ describe "ShardServer" do
 				{"hostname" : "localhost", "port" : #{@shard_port}}
 ,				{"hostname" : "localhost", "port" : #{@shard_port2}}
 			], "shardRouters" : [
+				{"hostname" : "localhost", "port" : #{TEST_SERVER_PORT}}
 			]
 			}
 		}
@@ -37,7 +38,7 @@ describe "ShardServer" do
 	 	@code = %Q{
 	 		var Server = require('zangetsu/shard_server').ShardServer;
 	 		var server = new Server("tmp/config.json");
-	 		server.start('127.0.0.1', #{TEST_SERVER_PORT});
+	 		server.start('localhost', #{TEST_SERVER_PORT}, 'localhost');
 	 	}
 
 	 	@server = async_eval_js(@code, :capture => !DEBUG)
