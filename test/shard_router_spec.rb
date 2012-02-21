@@ -13,7 +13,7 @@ describe "ShardedRouter" do
 
 	describe "addToToc" do
 		before :all do
-			config = %Q{{ "shards" : [], "shardServers" : []}}
+			config = %Q{{ "shards" : [], "shardRouters" : []}}
 			File.open('tmp/config.json', 'w') {|f| f.write(config) }
 			@proc = async_eval_js %Q{
 				var ShardRouter = require('zangetsu/shard_router').ShardRouter;
@@ -74,16 +74,16 @@ describe "ShardedRouter" do
 	describe "adding and removing shardservers" do
 		describe "addShardServer and removeShardServer" do
 			it "should add/remove the server to its list of shardservers" do
-				config = %Q{{ "shards" : [], "shardServers" : []}}
+				config = %Q{{ "shards" : [], "shardRouters" : []}}
 				File.open('tmp/config.json', 'w') {|f| f.write(config) }
 				@proc = async_eval_js %Q{
 					var Router = require('zangetsu/shard_router').ShardRouter;
 					var database = new Router('tmp/config.json');
 					var server = {"hostname" : "aap", "port" : 1532};
 					database.addShardServer(server);
-					console.log(database.shardServers["aap:1532"].hostname);
+					console.log(database.shardRouters["aap:1532"].hostname);
 					database.removeShardServer({identifier : "aap:1532"});
-					console.log(database.shardServers["aap:1532"]);
+					console.log(database.shardRouters["aap:1532"]);
 				}
 				eventually do
 					@proc.output == "aap\nundefined\n"
@@ -105,7 +105,7 @@ describe "ShardedRouter" do
 					{"hostname" : "first", "port" : 8393},
 					{"hostname" : "second", "port" : 8394}
 				 ],
-				  "shardServers" :
+				  "shardRouters" :
 				 [
 					{"hostname" : "firstS", "port" : 8393},
 					{"hostname" : "secondS", "port" : 8394}
@@ -119,7 +119,7 @@ describe "ShardedRouter" do
 					{"hostname" : "first", "port" : 8393},
 					{"hostname" : "second", "port" : 8394}
 				 ],
-				  "shardServers" :
+				  "shardRouters" :
 				 [
 					{"hostname" : "thirdS", "port" : 8392},
 					{"hostname" : "firstS", "port" : 8393},
@@ -140,7 +140,7 @@ describe "ShardedRouter" do
 			File.delete('tmp/config_2.json');
 		end
 
-		describe "shardsChanged & shardServersChanged" do
+		describe "shardsChanged & shardRoutersChanged" do
 			it "should add new shards and remove old ones" do
 				@proc = async_eval_js %Q{
 					var Router = require('zangetsu/shard_router').ShardRouter;
@@ -165,7 +165,7 @@ describe "ShardedRouter" do
 				end
 			end
 
-			it "should add new shardServers and remove old ones" do
+			it "should add new shardRouters and remove old ones" do
 				@proc = async_eval_js %Q{
 					var ShardRouter = require('zangetsu/shard_router').ShardRouter;
 					ShardRouter.prototype.oldAddShardServer = ShardRouter.prototype.addShardServer;
@@ -198,9 +198,9 @@ describe "ShardedRouter" do
 					console.log('shardsChanged');
 					this.shardConfiguration = shards;
 				}
-				ShardRouter.prototype.shardServersChanged = function(servers) {
-					console.log('shardServersChanged');
-					this.shardServerConfiguration = servers;
+				ShardRouter.prototype.shardRoutersChanged = function(servers) {
+					console.log('shardRoutersChanged');
+					this.shardRouterConfiguration = servers;
 				}
 				var database = new ShardRouter("tmp/config_1.json");
 				database.configure(); // should not have changed
@@ -208,7 +208,7 @@ describe "ShardedRouter" do
 				database.configure(); // should have changed
 				}
 				eventually do
-					@proc.output == "shardsChanged\nshardServersChanged\nshardsChanged\nshardServersChanged\n"
+					@proc.output == "shardsChanged\nshardRoutersChanged\nshardsChanged\nshardRoutersChanged\n"
 				end
 			end
 		end
