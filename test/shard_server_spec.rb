@@ -5,6 +5,7 @@ require File.expand_path(File.dirname(__FILE__) + "/shared_server_spec")
 describe "ShardServer" do
 	it "should launch from a configuration file" do
 	 	@dbpath = 'tmp/db'
+		FileUtils.mkdir_p(@dbpath + '2')
 	 	FileUtils.mkdir_p(@dbpath)
 
 		@shard_port = TEST_SERVER_PORT + 1
@@ -18,20 +19,19 @@ describe "ShardServer" do
 		@shard_port2 = TEST_SERVER_PORT + 2
 		@shard_code2 = %Q{
 			var Server = require('zangetsu/server').Server;
-			var server = new Server("tmp/db");
-			server.startAsMaster('127.0.0.1', #{@shard_port});
+			var server = new Server("tmp/db2");
+			server.startAsMaster('127.0.0.1', #{@shard_port2});
 		}
-		@shard2 = async_eval_js(@shard_code, :capture => !DEBUG)
+		@shard2 = async_eval_js(@shard_code2, :capture => !DEBUG)
 
 		config = %Q{
 			{ "shards" : [
-				{"hostname" : "localhost", "port" : #{@shard_port}},
-				{"hostname" : "localhost", "port" : #{@shard_port2}}
+				{"hostname" : "localhost", "port" : #{@shard_port}}
+,				{"hostname" : "localhost", "port" : #{@shard_port2}}
 			], "shardRouters" : [
 			]
 			}
 		}
-
 		File.open('tmp/config.json', 'w') {|f| f.write(config) }
 
 	 	@code = %Q{
@@ -46,21 +46,26 @@ describe "ShardServer" do
 		read_json
 		write_json({})
 		read_json.should== {'status' => 'ok' }
-		write_json(
-			:group => 'foo',
-			:timestamp => 48 * 60 * 60,
-			:command => 'add',
-			:size => "hello world".size,
-			:opid => 1
-		)
-		write_json(
-			:command => 'results'
-		)
-		read_json.should == {
-			'status' => 'error',
-			'message' => 'This command is not allowed because the server is in slave mode',
-				'disconnect' => true
-		}
+		10.times do |i|
+			write_json(
+				:group => "foo#{i}",
+				:timestamp => 48 * 60 * 60,
+				:command => 'add',
+				:size => "hello world".size,
+				:opid => i
+			)
+			@connection.write("hello world")
+			
+			write_json(
+				:command => 'results'
+			)
+			read_json.should == {
+				"results"=> {
+					"#{i}"=>{ "status"=>"ok" }
+				},
+				"status"=>"ok"
+			}
+		end
 
 		File.delete('tmp/config.json')
 		@connection.close if @connection
