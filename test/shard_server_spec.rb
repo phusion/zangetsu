@@ -71,7 +71,7 @@ describe "ShardServer" do
 			)
 			read_json.should == {
 				"results"=> {
-					"#{i}"=>{ "status"=>"ok" }
+					"#{i}"=>{ "status"=>"ok", "offset" => 0 }
 				},
 				"status"=>"ok"
 			}
