@@ -109,16 +109,23 @@ describe "ShardServer operations" do
 		@shard_code = %Q{
 			var Server = require('zangetsu/server').Server;
 			var server = new Server("tmp/db");
-			server.startAsMaster('127.0.0.1', #{@shard_port});
+			server.startAsMaster('127.0.0.1', #{@shard_port}, 'localhost');
 		}
 		@shard = async_eval_js(@shard_code, :capture => !DEBUG)
 
-		config = %Q{{ "shards" : [{"hostname" : "localhost", "port" : #{@shard_port}}], "shardServers" : []}}
+		config = %Q{
+			{ "shards" : [
+				{"hostname" : "localhost", "port" : #{@shard_port}}
+			], "shardRouters" : [
+				{"hostname" : "localhost", "port" : #{TEST_SERVER_PORT}}
+			]
+			}
+		}
 		File.open('tmp/config.json', 'w') {|f| f.write(config) }
 	 	@code = %Q{
 	 		var Server = require('zangetsu/shard_server').ShardServer;
 	 		var server = new Server("tmp/config.json");
-	 		server.start('127.0.0.1', #{TEST_SERVER_PORT});
+	 		server.start('127.0.0.1', #{TEST_SERVER_PORT}, 'localhost');
 	 	}
 	 	@server = async_eval_js(@code, :capture => !DEBUG)
 	 	@connection = wait_for_port(TEST_SERVER_PORT)
