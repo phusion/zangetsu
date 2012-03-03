@@ -121,7 +121,7 @@ module SpecHelper
 		proc.pid = fork do
 			ENV['NODE_PATH'] = "#{ROOT}/lib"
 			STDIN.reopen(proc.input_file, "r")
-			if !options.has_key?(:capture) || options[:capture]
+			if (!options.has_key?(:capture) || options[:capture])
 				STDOUT.reopen(proc.output_file, "w")
 				STDERR.reopen(proc.error_file, "w")
 			end

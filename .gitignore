@@ -7,3 +7,4 @@ ext/.lock-wscript
 ext/build
 doc/*.html
 doc/*.idmap.txt
+*.swp

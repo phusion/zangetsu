@@ -3,8 +3,11 @@ require File.expand_path(File.dirname(__FILE__) + "/spec_helper")
 
 describe "Distributed locks" do
 	before :each do
-		Dir.mkdir 'tmp'
-		Dir.mkdir 'tmp/db'
+		begin
+			Dir.mkdir 'tmp'
+			Dir.mkdir 'tmp/db'
+		rescue
+		end
 		@dbpath = 'tmp/db'
 	end
 
@@ -20,48 +23,8 @@ describe "Distributed locks" do
 		end
 	end
 
-	describe "acquireLock" do
-		it "should ask other shardservers for the lock" do
-			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.addShardServer({hostname: 'aap', port: 5321});
-					database.addShardServer({hostname: 'noot', port: 5321});
-					database.addShardServer({hostname: 'mies', port: 5321});
-					var proto = database.shardServers.aap.constructor.prototype;
-					proto.acquireLock = function(group, key) {
-						console.log("acquireLock");
-					}
-					database.acquireLock("group", 1);
-					console.log(database.lockTable["group" + '/' + 1].hostname);
-			}
-			eventually do
-				@proc.output == "acquireLock\nacquireLock\nacquireLock\nlocalhost\n"
-			end
-		end
-
-		it "should not ask for locks for existing lock but queue callback" do
-			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.addShardServer({hostname: 'aap', port: 5321});
-					var proto = database.shardServers.aap.constructor.prototype;
-					proto.acquireLock = function(group, key) {
-						console.log("acquireLock");
-					}
-					database.lockTable["group/1"] = {hostname : "noot", callbacks : [function(){}]}
-					database.acquireLock("group", 1, function(){});
-					console.log(database.lockTable["group/1"].callbacks.length);
-			}
-			eventually do
-				@proc.output == "2\n"
-			end
-			@proc.close
-		end
-	end
-
 	# Design:
-	# When a file needs to be changed, a node requests the lock. It will
+	# When a file or directory needs to be changed, a node requests a lock. It will
 	# do so by sending a lock request to all registered shard servers.
 	# When another shard server requests the same lock at the same time
 	# with it will deny the request.
@@ -89,44 +52,117 @@ describe "Distributed locks" do
 	#
 	# Correctness: No effort will be made to correct any incomplete actions
 	# executed by zangetsu.
+	
+	describe "isLocked" do
+		it "should return wether a lock is on a file" do
+			@proc = async_eval_js %Q{
+				var ShardRouter = require('zangetsu/shard_router');
+				var database = new ShardRouter.ShardRouter('tmp/config.json');
+				var otherServer = {
+					identifier: 'otherServer',
+					giveLock: function(key) {
+						console.log("locked");
+					}
+				}
+				database.shardServers.otherServer = otherServer;
+				database.lockTable["group"] = true;
+				database.lockTable["group1/file"] = true;
+				console.log(database.isLocked("group"));
+				console.log(database.isLocked("group1"));
+				console.log(database.isLocked("group", "file"));
+				console.log(database.isLocked("group1", "file"));
+			}
+			eventually do
+				@proc.output.include? "true\nfalse\ntrue\ntrue\n"
+			end
+		end
+	end
+
+	describe "lockObject" do
+		it "should return the owner of a lock on a file" do
+			@proc = async_eval_js %Q{
+				var ShardRouter = require('zangetsu/shard_router');
+				var database = new ShardRouter.ShardRouter('tmp/config.json');
+				var otherServer = {
+					identifier: 'otherServer',
+					giveLock: function(key) {
+						console.log("locked");
+					}
+				}
+				database.shardServers.otherServer = otherServer;
+				database.lockTable["group"] = "owner1";
+				database.lockTable["group1/file"] = "owner2";
+				console.log(database.lockObject("group"));
+				console.log(database.lockObject("group1"));
+				console.log(database.lockObject("group", "file"));
+				console.log(database.lockObject("group1", "file"));
+			}
+			eventually do
+				@proc.output.include? "owner1\nundefined\nowner1\nowner2\n"
+			end
+		end
+	end
 
 	describe "giveLock" do
 		it "should acknowledge and register the lock" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						giveLock: function(key) {
 							console.log("locked");
 						}
 					}
 					database.shardServers.otherServer = otherServer;
-					database.giveLock(otherServer.hostname, "group", 1);
-					console.log(database.lockTable["group/1"].hostname == otherServer.hostname);
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
 			}
 			eventually do
-				@proc.output == "locked\ntrue\n"
+				@proc.output.include? "locked\ntrue\n"
 			end
 		end
 
 		it "should deny when higher ranked and also requesting lock" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					database.priority = 1;
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						giveLock: function(key) {
 							console.log("locked");
 						},
 						priority: 0
 					}
 					database.shardServers.otherServer = otherServer;
-					database.shardServers[database.hostname] = database;
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: []};
-					database.giveLock(otherServer.hostname, "group", 1);
-					console.log(database.lockTable["group/1"].hostname == otherServer.hostname);
+					database.shardServers[database.identifier] = database;
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: []};
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
+			}
+			eventually do
+				@proc.output == "false\n"
+			end
+		end
+
+		it "should also work for directory locks" do
+			@proc = async_eval_js %Q{
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
+					database.priority = 1;
+					var otherServer = {
+						identifier: 'otherServer',
+						giveLock: function(key) {
+							console.log("locked");
+						},
+						priority: 0
+					}
+					database.shardServers.otherServer = otherServer;
+					database.shardServers[database.identifier] = database;
+					database.lockTable["group"] = {identifier: database.identifier, callbacks: []};
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockObject("group", 1).identifier == otherServer.identifier);
 			}
 			eventually do
 				@proc.output == "false\n"
@@ -135,24 +171,47 @@ describe "Distributed locks" do
 
 		it "should update lockTable with higher ranked server" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					database.priority = 0;
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						giveLock: function(key) {
 							console.log("locked");
 						},
 						priority: 1
 					}
 					database.shardServers.otherServer = otherServer;
-					database.shardServers[database.hostname] = database;
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: []};
-					database.giveLock(otherServer.hostname, "group", 1);
-					console.log(database.lockTable["group/1"].hostname == otherServer.hostname);
+					database.shardServers[database.identifier] = database;
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: []};
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
 			}
 			eventually do
 				@proc.output == "locked\ntrue\n"
+			end
+		end
+
+		it "should only give the lock when all other local actions have finished" do
+			@proc = async_eval_js %Q{
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
+					var otherServer = {
+						identifier: 'otherServer',
+						giveLock: function(key) {
+							console.log("given");
+						}
+					}
+					database.shardServers.otherServer = otherServer;
+					var key = database.getWorkKey();
+					var key2 = database.getWorkKey();
+					database.giveLock(otherServer.identifier, "group", 1);
+					console.log(database.lockTable["group/1"].identifier == otherServer.identifier);
+					database.doneWorking(key);
+					database.doneWorking(key2);
+			}
+			eventually do
+				@proc.output.include? "true\ngiven\n"
 			end
 		end
 	end
@@ -160,9 +219,9 @@ describe "Distributed locks" do
 	describe "releaseLock" do
 		it "should release a lock the shardserver owns and execute all callbacks" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: [function() {
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: [function() {
 						console.log('callback');
 					}, function() {
 						console.log('callback');
@@ -174,22 +233,66 @@ describe "Distributed locks" do
 				@proc.output == "callback\ncallback\ntrue\n"
 			end
 		end
+
+		it "should execute the action that is given in the unlock message" do
+			@proc = async_eval_js %Q{
+				var ShardRouter = require('zangetsu/shard_router');
+				var router = new ShardRouter.ShardRouter('tmp/config.json');
+				router.shards = {"shard1" : { identifier: "shard1"}};
+				router.lockTable["group/1"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", 1, {
+					command: "add",
+					shard: "shard1",
+					group: "group",
+					dayTimestamp: 1,
+				});
+				console.log(router.toc.group[1].shard.identifier);
+
+				router.toc["group"] = {1 : {}};
+				router.lockTable["group"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", null, {
+					command: "remove",
+					group: "group"
+				});
+				console.log(router.toc.group);
+
+				router.toc["group"] = {1 : {}, 2 : {}};
+				router.lockTable["group"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", null, {
+					command: "remove",
+					group: "group",
+					timestamp: 2 * 60 * 60 * 24
+				});
+				console.log(router.toc.group[2] == undefined);
+
+				router.lockTable["group/2"] = {identifier: router.identifier, callbacks: []};
+				router.releaseLock("group", 2, {
+					command: "removeOne",
+					group: "group",
+					dayTimestamp: 2
+				});
+				console.log(router.toc.group[2] == undefined);
+			}
+			eventually do
+				@proc.output == "shard1\nundefined\nfalse\ntrue\n"
+			end
+		end
 	end
 
 	describe "lock" do
 		it "should request all nodes for a lock on a file" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						lock: function(key) {
 							console.log("lock");
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						lock: function(key) {
 							console.log("lock");
 						},
@@ -199,7 +302,7 @@ describe "Distributed locks" do
 					database.shardServers.otherServer2 = otherServer2;
 					database.priority = 0;
 					database.lock("group", 1, function(){});
-					console.log(database.lockTable["group/1"].hostname  == database.hostname);
+					console.log(database.lockTable["group/1"].identifier  == database.identifier);
 			}
 			eventually do
 				@proc.output == "lock\nlock\ntrue\n"
@@ -208,11 +311,11 @@ describe "Distributed locks" do
 
 		it "should not lock if the file is already locked" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.lockTable["group/1"] = {hostname: 'otherServer', callbacks: []};
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
+					database.lockTable["group/1"] = {identifier: 'otherServer', callbacks: []};
 					database.lock("group", 1, function(){ console.log("callback");});
-					console.log(database.lockTable["group/1"].hostname  == database.hostname);
+					console.log(database.lockTable["group/1"].identifier  == database.identifier);
 					database.lockTable["group/1"].callbacks[0]();
 			}
 			eventually do
@@ -222,16 +325,16 @@ describe "Distributed locks" do
 
 		it "should save the lock time with the lock" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						lock: function(key) {
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						lock: function(key) {
 						},
 						priority: 2
@@ -257,17 +360,17 @@ describe "Distributed locks" do
 	describe "monitorLocks" do
 		it "it should query shards for old locks" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						listLocks: function(key) {
 							console.log('otherServer');
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						listLocks: function(key) {
 							console.log('otherServer2');
 						},
@@ -278,15 +381,15 @@ describe "Distributed locks" do
 					database.priority = 0;
 					var currentTime = new Date().getTime();
 					database.lockTable["group/1"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 30000
 					};
 					database.lockTable["group/2"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime
 					};
 					database.lockTable["group/3"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 20000
 					};
 					database.monitorLocks();
@@ -298,17 +401,17 @@ describe "Distributed locks" do
 
 		 it "should releaseLocks on given-up locks" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 					var otherServer = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						listLocks: function(callback) {
 							callback(["group/1"]);
 						},
 						priority: 1
 					}
 					var otherServer2 = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						listLocks: function(callback) {
 							callback(["group/2"]);
 						},
@@ -319,15 +422,15 @@ describe "Distributed locks" do
 					database.priority = 0;
 					var currentTime = new Date().getTime();
 					database.lockTable["group/1"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 30000
 					};
 					database.lockTable["group/2"] = {
-						hostname: 'otherServer2',
+						identifier: 'otherServer2',
 						time: currentTime - 30000
 					};
 					database.lockTable["group/3"] = {
-						hostname: 'otherServer',
+						identifier: 'otherServer',
 						time: currentTime - 30000
 					};
 					database.releaseLock = function(group, key) {
@@ -344,22 +447,22 @@ describe "Distributed locks" do
 	describe "receiveLock and unLock" do
 		it "should run the first callback and then release the lock" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
 
 					var callback = function() {
 						console.log("executed");	
 						return true;
 					}
 
-					database.lockTable["group/1"] = {hostname: database.hostname, callbacks: [callback], affirmed: []};
+					database.lockTable["group/1"] = {identifier: database.identifier, callbacks: [callback], affirmed: []};
 
 					var notify = function(k, result) {
 						console.log(result);
 					}
 
-					var otherServer = { hostname: 'otherServer', releaseLock: notify }
-					var otherServer2 = { hostname: 'otherServer2', releaseLock: notify }
+					var otherServer = { identifier: 'otherServer', releaseLock: notify }
+					var otherServer2 = { identifier: 'otherServer2', releaseLock: notify }
 					database.shardServers.otherServer = otherServer;
 					database.shardServers.otherServer2 = otherServer2;
 
@@ -376,9 +479,9 @@ describe "Distributed locks" do
 	describe "listLocks" do
 		it "should ask wether it still lays claim to a lock" do
 			@proc = async_eval_js %Q{
-					var ShardedDatabase = require('zangetsu/sharded_database');
-					var database = new ShardedDatabase.Database('tmp/config.json');
-					database.lockTable["group/1"] = {hostname: database.hostname};
+					var ShardRouter = require('zangetsu/shard_router');
+					var database = new ShardRouter.ShardRouter('tmp/config.json');
+					database.lockTable["group/1"] = {identifier: database.identifier};
 					database.shardServers["otherServer"] = { replyLocks: function(list) {
 						console.log(list[0]);
 					}};
