@@ -19,9 +19,9 @@ describe "ShardedDatabase" do
 					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
-				database.shardConnections["one"] = {"get" : function(a,b,c, call) { call();}};
+				database.shardConnections["one"] = {"get" : function(a,b,c, call) { call({'status': 'ok'});}};
 				database.get("a", 1, 1, function() { console.log('done'); });
-			}
+			},:capture => !DEBUG
 			eventually do
 				@proc.output.include? 'done'
 			end
@@ -114,15 +114,15 @@ describe "ShardedDatabase" do
 					getWorkKey : function(){}, doneWorking: function() {}
 				};
 				var database = new Database(router);
-				database.shardConnections["one"] = {"results" : function(c) { c({"a" : "done" }); }};
-				database.shardConnections["two"] = {"results" : function(c) { c({"b" : "done" }); }};
+				database.shardConnections["one"] = {"results" : function(c) { c({"results" : {"a" : "done"} }); }};
+				database.shardConnections["two"] = {"results" : function(c) { c({"results" : {"b" : "done" }}); }};
 				database.addingShards = {"one" : true, "two" : true};
 
 				database.results(function(results) {
 					console.log(results["a"] + "\\n" + results["b"]);
 				});
 
-			}
+			}, :capture => !DEBUG
 			eventually do
 				@proc.output.include? "done\ndone"
 			end
