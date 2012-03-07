@@ -10,6 +10,7 @@ describe "Replication" do
 			var Database = require('zangetsu/database');
 			var database = server.database;
 			var CRC32    = require('zangetsu/crc32.js');
+			var opid = 0;
 
 			server.resultCheckThreshold = 1;
 			
@@ -25,7 +26,7 @@ describe "Replication" do
 					options = undefined;
 				}
 				var checksum = CRC32.toBuffer(buffers);
-				database.add(groupName, dayTimestamp, buffers, checksum, options,
+				database.add(opid+=1,groupName, dayTimestamp, buffers, checksum, options,
 					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
