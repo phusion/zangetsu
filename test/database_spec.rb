@@ -9,6 +9,7 @@ describe "Database" do
 			var Database = require('zangetsu/database');
 			var database = new Database.Database('#{@dbpath}');
 			var CRC32    = require('zangetsu/crc32.js');
+			var opid = 0;
 			
 			function add(groupName, dayTimestamp, strOrBuffers, options, callback) {
 				var buffers;
@@ -22,7 +23,7 @@ describe "Database" do
 					options = undefined;
 				}
 				var checksum = CRC32.toBuffer(buffers);
-				database.add(groupName, dayTimestamp, buffers, checksum, options,
+				database.add(opid +=1, groupName, dayTimestamp, buffers, checksum, options,
 					function(err, offset, rawSize, buffers)
 				{
 					if (err) {
